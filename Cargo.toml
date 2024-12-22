@@ -4,3 +4,14 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+exhume_readers = { path = "../exhume_readers" }
+compress = "0.2.1"
+glob = "0.3.1"
+hexdump = "0.1.1"
+md-5 = "0.10.5"
+flate2 = "1.0.25"
+bootsector = "0.2.0"
+uguid = "2.0.0"
+chrono = "0.4.26"
+log = "0.4.17"
+env_logger = "0.10.0"
