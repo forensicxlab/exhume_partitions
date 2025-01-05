@@ -16,6 +16,8 @@ fn process_file(file_path: &str, format: &str, verbose: &bool) {
 
     if potential_mbr.is_mbr() {
         potential_mbr.print_info();
+        // TODO: Handle the logic to parse GPT if the partition type found is GPT.
+        // I need to find a disk image using GPT partition scheme.
     }
 }
 
@@ -25,12 +27,12 @@ fn main() {
         .author("ForensicXlab")
         .about("Exhume the partitions from a given body of data.")
         .arg(
-            Arg::new("input")
-                .short('i')
-                .long("input")
+            Arg::new("body")
+                .short('b')
+                .long("body")
                 .value_parser(clap::value_parser!(String))
                 .required(true)
-                .help("The path to the input file."),
+                .help("The path to the body to exhume."),
         )
         .arg(
             Arg::new("format")
@@ -48,7 +50,7 @@ fn main() {
         )
         .get_matches();
 
-    let file_path = matches.get_one::<String>("input").unwrap();
+    let file_path = matches.get_one::<String>("body").unwrap();
     let format = matches.get_one::<String>("format").unwrap();
     let verbose = match matches.get_one::<bool>("verbose") {
         Some(verbose) => verbose,

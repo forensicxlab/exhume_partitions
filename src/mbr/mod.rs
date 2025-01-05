@@ -14,6 +14,7 @@ pub struct MBRPartitionEntry {
     end_chs: [u8; 3],   // CHS address of the end of the partition
     start_lba: u32,     // Start address of the partition in LBA (Logical Block Addressing)
     size_sectors: u32,  // Size of the partition in sectors
+    sector_size: usize,
 }
 
 impl MBRPartitionEntry {
@@ -186,6 +187,35 @@ impl MBRPartitionEntry {
             _ => "Unknown",
         }
     }
+
+    /// Converts raw CHS bytes into a human-readable tuple
+    fn chs_tuple(bytes: [u8; 3]) -> (u16, u8, u8) {
+        // Extract Head from the first byte
+        let head = bytes[0];
+        // Extract Sector from the lower 6 bits of the second byte
+        let sector = bytes[1] & 0x3F;
+        // Extract the upper 2 bits of the second byte and combine with the third byte to get Cylinder
+        let cylinder = ((bytes[1] as u16 & 0xC0) << 2) | (bytes[2] as u16);
+        (cylinder, head, sector)
+    }
+
+    /// Get readable CHS start tuple
+    pub fn start_chs_tuple(&self) -> (u16, u8, u8) {
+        MBRPartitionEntry::chs_tuple(self.start_chs)
+    }
+
+    /// Get readable CHS end tuple
+    pub fn end_chs_tuple(&self) -> (u16, u8, u8) {
+        MBRPartitionEntry::chs_tuple(self.end_chs)
+    }
+
+    pub fn get_start_lba(&self) -> usize {
+        self.start_lba as usize
+    }
+
+    pub fn get_first_byte_address(&self) -> usize {
+        self.sector_size * self.start_lba as usize
+    }
 }
 
 /// MBR Structure (512 bytes)
@@ -231,6 +261,7 @@ impl MBR {
                 ],
                 start_lba: cursor.read_u32::<LittleEndian>().unwrap(),
                 size_sectors: cursor.read_u32::<LittleEndian>().unwrap(),
+                sector_size: 512, // The default value but it might be changed
             };
         }
 
@@ -242,6 +273,10 @@ impl MBR {
         mbr.boot_signature = cursor.read_u16::<LittleEndian>().unwrap();
 
         mbr
+    }
+
+    pub fn get_partition_table(&self) -> &[MBRPartitionEntry; 4] {
+        &self.partition_table
     }
 
     pub fn is_mbr(&self) -> bool {
@@ -277,28 +312,22 @@ impl MBR {
             Cell::new("Bootable"),
             Cell::new("Start address (CHS)"),
             Cell::new("End address (CHS)"),
+            Cell::new("Start address (LBA)"),
             Cell::new("Partition type"),
             Cell::new("Type Description"),
-            Cell::new("Start address (LBA)"),
+            Cell::new("First byte address"),
             Cell::new("Size (in sectors)"),
         ]));
 
-        for partition in &self.partition_table {
-            let start_chs_number: u32 = ((partition.start_chs[0] as u32) << 16)
-                | ((partition.start_chs[1] as u32) << 8)
-                | (partition.start_chs[2] as u32);
-
-            let end_chs_number: u32 = ((partition.end_chs[0] as u32) << 16)
-                | ((partition.end_chs[1] as u32) << 8)
-                | (partition.end_chs[2] as u32);
-
+        for partition in self.get_partition_table() {
             partitions_table.add_row(Row::new(vec![
-                Cell::new(&(format!("0x{:02x}", partition.boot_indicator))),
-                Cell::new(&(format!("0x{:06x}", start_chs_number))),
-                Cell::new(&(format!("0x{:06x}", end_chs_number))),
+                Cell::new(&(format!("{:?}", partition.boot_indicator))),
+                Cell::new(&(format!("{:?}", partition.start_chs_tuple()))),
+                Cell::new(&(format!("{:?}", partition.end_chs_tuple()))),
+                Cell::new(&(format!("0x{:x}", partition.get_start_lba()))),
                 Cell::new(&(format!("0x{:02x}", partition.partition_type))),
                 Cell::new(partition.partition_type_description()),
-                Cell::new(&(format!("0x{:x}", partition.start_lba))),
+                Cell::new(&(format!("0x{:x}", partition.get_first_byte_address()))),
                 Cell::new(&(format!("0x{:x}", partition.size_sectors))),
             ]));
         }
