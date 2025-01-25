@@ -1,8 +1,13 @@
+mod ebr;
 mod gpt;
 mod mbr;
 
+use std::any::Any;
+
 use clap::{Arg, ArgAction, Command};
+use ebr::{parse_ebr, print_ebr};
 use exhume_body::Body;
+use mbr::MBRPartitionEntry;
 
 fn process_file(file_path: &str, format: &str, verbose: &bool) {
     let mut body = Body::new(file_path.to_string(), format);
@@ -12,10 +17,30 @@ fn process_file(file_path: &str, format: &str, verbose: &bool) {
 
     // Try to identify a MBR partition scheme
     let bootsector = body.read(512);
-    let potential_mbr = mbr::MBR::from_bytes(&bootsector);
+    let main_mbr = mbr::MBR::from_bytes(&bootsector);
+    let mut all_partitions: Vec<MBRPartitionEntry> = Vec::new();
 
-    if potential_mbr.is_mbr() {
-        potential_mbr.print_info();
+    if main_mbr.is_mbr() {
+        main_mbr.print_info();
+        // EBR lookup
+        for p in main_mbr.partition_table {
+            // If it's an extended partition, parse the EBR chain
+            match p.partition_type {
+                0x05 | 0x0F | 0x85 => {
+                    println!("Extended partition found !");
+                    // p.start_lba is the LBA offset of the extended partition
+                    let extended_partitions = parse_ebr(
+                        &mut body,
+                        p.start_lba,   // extended_base_lba
+                        p.sector_size, // sector size
+                    );
+                    all_partitions.extend(extended_partitions);
+                }
+                _ => (), // not an extended partition
+            };
+        }
+        print_ebr(&all_partitions);
+
         // TODO: Handle the logic to parse GPT if the partition type found is GPT.
         // I need to find a disk image using GPT partition scheme.
     }
