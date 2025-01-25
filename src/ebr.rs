@@ -1,5 +1,7 @@
 use crate::mbr::{MBRPartitionEntry, MBR};
 use exhume_body::Body;
+use std::io::{Read, Seek, SeekFrom};
+
 use prettytable::{Cell, Row, Table};
 /// Recursively parse Extended Boot Records (EBRs) and discover all logical partitions.
 ///
@@ -12,10 +14,11 @@ use prettytable::{Cell, Row, Table};
 pub fn parse_ebr(body: &mut Body, start_lba: u32, sector_size: usize) -> Vec<MBRPartitionEntry> {
     let mut partitions_found = Vec::new();
     let ebr_absolute_lba = start_lba as usize * sector_size;
-    body.seek(ebr_absolute_lba as u64);
+    body.seek(SeekFrom::Start(ebr_absolute_lba as u64)).unwrap();
+    let mut ebr_data = vec![0u8; 512];
 
     // Read 512 bytes at ebr_absolute_lba
-    let ebr_data = body.read(512);
+    body.read(&mut ebr_data).unwrap();
 
     let mut ebr = MBR::from_bytes(&ebr_data);
 

@@ -210,7 +210,7 @@ impl MBRPartitionEntry {
         MBRPartitionEntry::chs_tuple(self.end_chs)
     }
 
-    pub fn get_first_byte_address(&self) -> usize {
+    pub fn _get_first_byte_address(&self) -> usize {
         self.sector_size * self.start_lba as usize
     }
 }

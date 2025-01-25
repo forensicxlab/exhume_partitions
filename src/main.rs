@@ -2,12 +2,11 @@ mod ebr;
 mod gpt;
 mod mbr;
 
-use std::any::Any;
-
 use clap::{Arg, ArgAction, Command};
 use ebr::{parse_ebr, print_ebr};
 use exhume_body::Body;
 use mbr::MBRPartitionEntry;
+use std::io::Read;
 
 fn process_file(file_path: &str, format: &str, verbose: &bool) {
     let mut body = Body::new(file_path.to_string(), format);
@@ -16,7 +15,9 @@ fn process_file(file_path: &str, format: &str, verbose: &bool) {
     }
 
     // Try to identify a MBR partition scheme
-    let bootsector = body.read(512);
+    let mut bootsector = vec![0u8; 512];
+    // Read 512 bytes at ebr_absolute_lba
+    body.read(&mut bootsector).unwrap();
     let main_mbr = mbr::MBR::from_bytes(&bootsector);
     let mut all_partitions: Vec<MBRPartitionEntry> = Vec::new();
 
