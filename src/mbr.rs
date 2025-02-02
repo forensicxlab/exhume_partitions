@@ -2,6 +2,7 @@
 
 use byteorder::{LittleEndian, ReadBytesExt};
 use capstone::prelude::*;
+use log::{error, info};
 use prettytable::{Cell, Row, Table};
 use std::io::{Cursor, Read};
 
@@ -234,7 +235,7 @@ impl MBR {
         };
 
         if bytes.len() < 512 {
-            eprintln!("512 bytes are required to identify an MBR");
+            error!("512 bytes are required to identify an MBR");
             std::process::exit(1);
         }
 
@@ -281,7 +282,7 @@ impl MBR {
     }
 
     pub fn print_info(&self) {
-        println!("The disk uses the MBR partition scheme:");
+        info!("Found an MBR partition scheme.");
         let mut mbr_table = Table::new();
         let mut partitions_table = Table::new();
 

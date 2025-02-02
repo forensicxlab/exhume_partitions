@@ -2,34 +2,30 @@ mod ebr;
 mod gpt;
 mod mbr;
 
-use clap::{Arg, ArgAction, Command};
+use clap::{value_parser, Arg, Command};
 use ebr::{parse_ebr, print_ebr};
 use exhume_body::Body;
+use log::{debug, info, warn};
 use mbr::MBRPartitionEntry;
 use std::io::Read;
 
-fn process_file(file_path: &str, format: &str, verbose: &bool) {
+fn process_file(file_path: &str, format: &str) {
     let mut body = Body::new(file_path.to_string(), format);
-    if *verbose {
-        body.print_info();
-    }
+    // Instead of conditionally printing body info, log it at debug level.
+    debug!("Created Body from '{}'", file_path);
 
-    // Try to identify a MBR partition scheme
+    // Try to identify an MBR partition scheme.
     let mut bootsector = vec![0u8; 512];
-    // Read 512 bytes at ebr_absolute_lba
     body.read(&mut bootsector).unwrap();
     let main_mbr = mbr::MBR::from_bytes(&bootsector);
-    let mut all_partitions: Vec<MBRPartitionEntry> = Vec::new();
-
     if main_mbr.is_mbr() {
         main_mbr.print_info();
-        // EBR lookup
+        let mut all_partitions: Vec<MBRPartitionEntry> = Vec::new();
         for p in main_mbr.partition_table {
-            // If it's an extended partition, parse the EBR chain
+            // If it’s an extended partition, parse the EBR chain.
             match p.partition_type {
                 0x05 | 0x0F | 0x85 => {
-                    println!("Extended partition found !");
-                    // p.start_lba is the LBA offset of the extended partition
+                    info!("Extended partition found!");
                     let extended_partitions = parse_ebr(
                         &mut body,
                         p.start_lba,   // extended_base_lba
@@ -37,13 +33,12 @@ fn process_file(file_path: &str, format: &str, verbose: &bool) {
                     );
                     all_partitions.extend(extended_partitions);
                 }
-                _ => (), // not an extended partition
-            };
+                _ => {}
+            }
         }
         print_ebr(&all_partitions);
-
-        // TODO: Handle the logic to parse GPT if the partition type found is GPT.
-        // I need to find a disk image using GPT partition scheme.
+    } else {
+        warn!("MBR not detected.");
     }
 }
 
@@ -56,7 +51,7 @@ fn main() {
             Arg::new("body")
                 .short('b')
                 .long("body")
-                .value_parser(clap::value_parser!(String))
+                .value_parser(value_parser!(String))
                 .required(true)
                 .help("The path to the body to exhume."),
         )
@@ -64,23 +59,33 @@ fn main() {
             Arg::new("format")
                 .short('f')
                 .long("format")
-                .value_parser(clap::value_parser!(String))
+                .value_parser(value_parser!(String))
                 .required(true)
                 .help("The format of the file, either 'raw' or 'ewf'."),
         )
         .arg(
-            Arg::new("verbose")
-                .short('v')
-                .long("verbose")
-                .action(ArgAction::SetTrue),
+            Arg::new("log_level")
+                .short('l')
+                .long("log-level")
+                .value_parser(["error", "warn", "info", "debug", "trace"])
+                .default_value("info")
+                .help("Set the log verbosity level"),
         )
         .get_matches();
 
+    // Initialize the logger.
+    let log_level_str = matches.get_one::<String>("log_level").unwrap();
+    let level_filter = match log_level_str.as_str() {
+        "error" => log::LevelFilter::Error,
+        "warn" => log::LevelFilter::Warn,
+        "info" => log::LevelFilter::Info,
+        "debug" => log::LevelFilter::Debug,
+        "trace" => log::LevelFilter::Trace,
+        _ => log::LevelFilter::Info,
+    };
+    env_logger::Builder::new().filter_level(level_filter).init();
+
     let file_path = matches.get_one::<String>("body").unwrap();
     let format = matches.get_one::<String>("format").unwrap();
-    let verbose = match matches.get_one::<bool>("verbose") {
-        Some(verbose) => verbose,
-        None => &false,
-    };
-    process_file(file_path, format, verbose);
+    process_file(file_path, format);
 }

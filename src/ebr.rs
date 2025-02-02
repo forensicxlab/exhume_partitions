@@ -1,8 +1,8 @@
 use crate::mbr::{MBRPartitionEntry, MBR};
 use exhume_body::Body;
+use prettytable::{Cell, Row, Table};
 use std::io::{Read, Seek, SeekFrom};
 
-use prettytable::{Cell, Row, Table};
 /// Recursively parse Extended Boot Records (EBRs) and discover all logical partitions.
 ///
 /// * `disk_data`: the full disk image in memory
@@ -26,7 +26,8 @@ pub fn parse_ebr(body: &mut Body, start_lba: u32, sector_size: usize) -> Vec<MBR
     let logical_partition = &mut ebr.partition_table[0];
     if logical_partition.partition_type != 0x00 {
         // A valid partition entry
-        logical_partition.first_byte_addr = (start_lba + logical_partition.start_lba) as usize;
+        logical_partition.start_lba = start_lba + logical_partition.start_lba;
+        logical_partition.first_byte_addr = logical_partition.start_lba as usize * sector_size;
         partitions_found.push(logical_partition.clone());
     }
 
