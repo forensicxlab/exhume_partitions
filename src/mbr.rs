@@ -4,19 +4,21 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use capstone::prelude::*;
 use log::{error, info};
 use prettytable::{Cell, Row, Table};
+use serde::{Deserialize, Serialize};
 use std::io::{Cursor, Read};
 
 /// A MBR Partition Entry (16 bytes)
-#[derive(Debug, Default, Clone)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct MBRPartitionEntry {
-    pub boot_indicator: u8, // Bootable (0x80 for active, 0x00 for inactive)
-    pub start_chs: [u8; 3], // CHS (Cylinder-Head-Sector) address of the start of the partition
-    pub partition_type: u8, // Partition type (e.g., 0x07 for NTFS, 0x83 for Linux)
-    pub end_chs: [u8; 3],   // CHS address of the end of the partition
-    pub start_lba: u32,     // Start address of the partition in LBA (Logical Block Addressing)
-    pub size_sectors: u32,  // Size of the partition in sectors
-    pub sector_size: usize, // Size of a sector
-    pub first_byte_addr: usize,
+    pub boot_indicator: u8,     // Bootable (0x80 for active, 0x00 for inactive)
+    pub start_chs: [u8; 3],     // CHS (Cylinder-Head-Sector) address of the start of the partition
+    pub partition_type: u8,     // Partition type (e.g., 0x07 for NTFS, 0x83 for Linux)
+    pub end_chs: [u8; 3],       // CHS address of the end of the partition
+    pub start_lba: u32,         // Start address of the partition in LBA (Logical Block Addressing)
+    pub size_sectors: u32,      // Size of the partition in sectors
+    pub sector_size: usize,     // Size of a sector
+    pub first_byte_addr: usize, // First absolute byte address
+    pub description: String,
 }
 
 impl MBRPartitionEntry {
@@ -217,11 +219,11 @@ impl MBRPartitionEntry {
 }
 
 /// MBR Structure (512 bytes)
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MBR {
-    pub bootloader: [u8; 446], // Bootloader code (size: 446 bytes)
+    pub bootloader: Vec<u8>, // Bootloader code (size: 446 bytes)
     pub partition_table: [MBRPartitionEntry; 4], // Partition table (max 4 entries)
-    pub boot_signature: u16,   // the value should be 0x55AA
+    pub boot_signature: u16, // the value should be 0x55AA
 }
 
 impl MBR {
@@ -229,9 +231,9 @@ impl MBR {
         let mut cursor = Cursor::new(bytes);
 
         let mut mbr = MBR {
-            bootloader: [0u8; 446],              // Initialize bootloader array with zeros
+            bootloader: vec![0u8; 446], // Initialize bootloader array with zeros
             partition_table: Default::default(), // Initialize partition table with default values
-            boot_signature: 0,                   // Initialize signature with 0
+            boot_signature: 0,          // Initialize signature with 0
         };
 
         if bytes.len() < 512 {
@@ -261,9 +263,13 @@ impl MBR {
                 size_sectors: cursor.read_u32::<LittleEndian>().unwrap(),
                 sector_size: 512, // The default value but it might be changed
                 first_byte_addr: 0,
+                description: "Unknown".to_string(),
             };
             mbr.partition_table[i].first_byte_addr =
                 mbr.partition_table[i].sector_size * mbr.partition_table[i].start_lba as usize;
+            mbr.partition_table[i].description = mbr.partition_table[i]
+                .partition_type_description()
+                .to_string();
         }
 
         // Read MBR signature (last 2 bytes)
@@ -323,7 +329,7 @@ impl MBR {
                 Cell::new(&(format!("{:?}", partition.end_chs_tuple()))),
                 Cell::new(&(format!("0x{:x}", partition.start_lba))),
                 Cell::new(&(format!("0x{:02x}", partition.partition_type))),
-                Cell::new(partition.partition_type_description()),
+                Cell::new(&(format!("{:?}", partition.description))),
                 Cell::new(&(format!("0x{:x}", partition.first_byte_addr))),
                 Cell::new(&(format!("0x{:x}", partition.size_sectors))),
             ]));

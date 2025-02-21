@@ -1,45 +1,21 @@
-mod ebr;
-mod gpt;
-mod mbr;
-
 use clap::{value_parser, Arg, Command};
-use ebr::{parse_ebr, print_ebr};
 use exhume_body::Body;
-use log::{debug, info, warn};
-use mbr::MBRPartitionEntry;
-use std::io::Read;
+use exhume_partitions::Partitions;
+use log::{debug, error};
 
 fn process_file(file_path: &str, format: &str) {
     let mut body = Body::new(file_path.to_string(), format);
     // Instead of conditionally printing body info, log it at debug level.
-    debug!("Created Body from '{}'", file_path);
-
-    // Try to identify an MBR partition scheme.
-    let mut bootsector = vec![0u8; 512];
-    body.read(&mut bootsector).unwrap();
-    let main_mbr = mbr::MBR::from_bytes(&bootsector);
-    if main_mbr.is_mbr() {
-        main_mbr.print_info();
-        let mut all_partitions: Vec<MBRPartitionEntry> = Vec::new();
-        for p in main_mbr.partition_table {
-            // If it’s an extended partition, parse the EBR chain.
-            match p.partition_type {
-                0x05 | 0x0F | 0x85 => {
-                    info!("Extended partition found!");
-                    let extended_partitions = parse_ebr(
-                        &mut body,
-                        p.start_lba,   // extended_base_lba
-                        p.sector_size, // sector size
-                    );
-                    all_partitions.extend(extended_partitions);
-                }
-                _ => {}
-            }
+    debug!("Created Body from '{}'.", file_path);
+    debug!("Discovering partitions.");
+    match Partitions::new(&mut body) {
+        Ok(discover_partitions) => {
+            discover_partitions.print_info();
         }
-        print_ebr(&all_partitions);
-    } else {
-        warn!("MBR not detected.");
-    }
+        Err(err) => {
+            error!("Could not discover partitions: {:?}", err);
+        }
+    };
 }
 
 fn main() {

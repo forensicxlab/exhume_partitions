@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 exhume_body = { path = "../exhume_body" }
+serde = { version = "1", features = ["derive"] }
 glob = "0.3.1"
 byteorder = "1.4"
 uguid = "2.0.0"
