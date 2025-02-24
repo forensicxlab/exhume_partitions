@@ -224,6 +224,7 @@ pub struct MBR {
     pub bootloader: Vec<u8>, // Bootloader code (size: 446 bytes)
     pub partition_table: [MBRPartitionEntry; 4], // Partition table (max 4 entries)
     pub boot_signature: u16, // the value should be 0x55AA
+    pub bootloader_disam: String,
 }
 
 impl MBR {
@@ -234,6 +235,7 @@ impl MBR {
             bootloader: vec![0u8; 446], // Initialize bootloader array with zeros
             partition_table: Default::default(), // Initialize partition table with default values
             boot_signature: 0,          // Initialize signature with 0
+            bootloader_disam: Default::default(),
         };
 
         if bytes.len() < 512 {
@@ -270,13 +272,26 @@ impl MBR {
             mbr.partition_table[i].description = mbr.partition_table[i]
                 .partition_type_description()
                 .to_string();
+
+            let cs = Capstone::new()
+                .x86()
+                .mode(arch::x86::ArchMode::Mode16) // Use 16-bit mode
+                .build()
+                .unwrap();
+
+            let instructions = cs.disasm_all(&mbr.bootloader, 0x1000).unwrap();
+            let opcodes: Vec<String> = instructions
+                .iter()
+                .map(|ins| ins.to_string()) // Converts each instruction to a string
+                .collect();
+            mbr.bootloader_disam = opcodes.join("\n");
         }
 
         // Read MBR signature (last 2 bytes)
         // Since little-endian representation must be assumed in the context of IBM PC compatible machines,
         // this can be written as 16-bit word 'AA55'hex in programs for x86 processors (note the swapped order),
         // whereas it would have to be written as '55AA'hex in programs for other CPU architectures using a big-endian representation.
-        // Here we choose to use LittleEndian so 'AA55'hex should match.
+        // Here we choose to use LittleEndian so 'AA55'hex should match. Placing this here because I didn't understood and it might help you.
         mbr.boot_signature = cursor.read_u16::<LittleEndian>().unwrap();
 
         mbr
@@ -292,22 +307,9 @@ impl MBR {
         let mut mbr_table = Table::new();
         let mut partitions_table = Table::new();
 
-        let cs = Capstone::new()
-            .x86()
-            .mode(arch::x86::ArchMode::Mode16) // Use 16-bit mode
-            .build()
-            .unwrap();
-
-        let instructions = cs.disasm_all(&self.bootloader, 0x1000).unwrap();
-        let opcodes: Vec<String> = instructions
-            .iter()
-            .map(|ins| ins.to_string()) // Converts each instruction to a string
-            .collect();
-        let opcodes_str = opcodes.join("\n");
-
         mbr_table.add_row(Row::new(vec![
             Cell::new("Bootloader"),
-            Cell::new(&opcodes_str),
+            Cell::new(&(format!("{:?}", self.bootloader_disam))),
         ]));
 
         // Now, we create a table for each partitions
