@@ -1,5 +1,3 @@
-// Reference: https://en.wikipedia.org/wiki/Master_boot_record
-
 use byteorder::{LittleEndian, ReadBytesExt};
 use capstone::prelude::*;
 use log::{error, info};
@@ -7,23 +5,20 @@ use prettytable::{Cell, Row, Table};
 use serde::{Deserialize, Serialize};
 use std::io::{Cursor, Read};
 
-/// A MBR Partition Entry (16 bytes)
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct MBRPartitionEntry {
-    pub boot_indicator: u8,     // Bootable (0x80 for active, 0x00 for inactive)
-    pub start_chs: [u8; 3],     // CHS (Cylinder-Head-Sector) address of the start of the partition
-    pub partition_type: u8,     // Partition type (e.g., 0x07 for NTFS, 0x83 for Linux)
-    pub end_chs: [u8; 3],       // CHS address of the end of the partition
-    pub start_lba: u32,         // Start address of the partition in LBA (Logical Block Addressing)
-    pub size_sectors: u32,      // Size of the partition in sectors
-    pub sector_size: usize,     // Size of a sector
-    pub first_byte_addr: usize, // First absolute byte address
+    pub boot_indicator: u8,
+    pub start_chs: [u8; 3],
+    pub partition_type: u8,
+    pub end_chs: [u8; 3],
+    pub start_lba: u32,
+    pub size_sectors: u32,
+    pub sector_size: usize,
+    pub first_byte_addr: usize,
     pub description: String,
 }
 
 impl MBRPartitionEntry {
-    /// Returns a human-readable description of the partition type.
-    /// Ref: https://en.wikipedia.org/wiki/Partition_type
     pub fn partition_type_description(&self) -> &str {
         match self.partition_type {
             0x00 => "Unused",
@@ -191,62 +186,41 @@ impl MBRPartitionEntry {
             _ => "Unknown",
         }
     }
-
-    /// Converts raw CHS bytes into a human-readable tuple
     fn chs_tuple(bytes: [u8; 3]) -> (u16, u8, u8) {
-        // Extract Head from the first byte
         let head = bytes[0];
-        // Extract Sector from the lower 6 bits of the second byte
         let sector = bytes[1] & 0x3F;
-        // Extract the upper 2 bits of the second byte and combine with the third byte to get Cylinder
         let cylinder = ((bytes[1] as u16 & 0xC0) << 2) | (bytes[2] as u16);
         (cylinder, head, sector)
     }
-
-    /// Get readable CHS start tuple
     pub fn start_chs_tuple(&self) -> (u16, u8, u8) {
         MBRPartitionEntry::chs_tuple(self.start_chs)
     }
-
-    /// Get readable CHS end tuple
     pub fn end_chs_tuple(&self) -> (u16, u8, u8) {
         MBRPartitionEntry::chs_tuple(self.end_chs)
     }
-
     pub fn _get_first_byte_address(&self) -> usize {
         self.sector_size * self.start_lba as usize
     }
 }
 
-/// MBR Structure (512 bytes)
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MBR {
-    pub bootloader: Vec<u8>, // Bootloader code (size: 446 bytes)
-    pub partition_table: [MBRPartitionEntry; 4], // Partition table (max 4 entries)
-    pub boot_signature: u16, // the value should be 0x55AA
+    pub bootloader: Vec<u8>,
+    pub partition_table: [MBRPartitionEntry; 4],
+    pub boot_signature: u16,
     pub bootloader_disam: String,
 }
 
 impl MBR {
     pub fn from_bytes(bytes: &[u8]) -> Self {
         let mut cursor = Cursor::new(bytes);
-
         let mut mbr = MBR {
-            bootloader: vec![0u8; 446], // Initialize bootloader array with zeros
-            partition_table: Default::default(), // Initialize partition table with default values
-            boot_signature: 0,          // Initialize signature with 0
+            bootloader: vec![0u8; 446],
+            partition_table: Default::default(),
+            boot_signature: 0,
             bootloader_disam: Default::default(),
         };
-
-        if bytes.len() < 512 {
-            error!("512 bytes are required to identify an MBR");
-            std::process::exit(1);
-        }
-
-        // Read bootloader (446 bytes)
         cursor.read_exact(&mut mbr.bootloader).unwrap();
-
-        // Read partition table (4 entries, each 16 bytes)
         for i in 0..4 {
             mbr.partition_table[i] = MBRPartitionEntry {
                 boot_indicator: cursor.read_u8().unwrap(),
@@ -263,7 +237,7 @@ impl MBR {
                 ],
                 start_lba: cursor.read_u32::<LittleEndian>().unwrap(),
                 size_sectors: cursor.read_u32::<LittleEndian>().unwrap(),
-                sector_size: 512, // The default value but it might be changed
+                sector_size: 512,
                 first_byte_addr: 0,
                 description: "Unknown".to_string(),
             };
@@ -272,47 +246,30 @@ impl MBR {
             mbr.partition_table[i].description = mbr.partition_table[i]
                 .partition_type_description()
                 .to_string();
-
             let cs = Capstone::new()
                 .x86()
-                .mode(arch::x86::ArchMode::Mode16) // Use 16-bit mode
+                .mode(arch::x86::ArchMode::Mode16)
                 .build()
                 .unwrap();
-
             let instructions = cs.disasm_all(&mbr.bootloader, 0x1000).unwrap();
-            let opcodes: Vec<String> = instructions
-                .iter()
-                .map(|ins| ins.to_string()) // Converts each instruction to a string
-                .collect();
+            let opcodes: Vec<String> = instructions.iter().map(|ins| ins.to_string()).collect();
             mbr.bootloader_disam = opcodes.join("\n");
         }
-
-        // Read MBR signature (last 2 bytes)
-        // Since little-endian representation must be assumed in the context of IBM PC compatible machines,
-        // this can be written as 16-bit word 'AA55'hex in programs for x86 processors (note the swapped order),
-        // whereas it would have to be written as '55AA'hex in programs for other CPU architectures using a big-endian representation.
-        // Here we choose to use LittleEndian so 'AA55'hex should match. Placing this here because I didn't understood and it might help you.
         mbr.boot_signature = cursor.read_u16::<LittleEndian>().unwrap();
-
         mbr
     }
-
     pub fn is_mbr(&self) -> bool {
         let mbr_signature = 0xAA55;
         self.boot_signature == mbr_signature
     }
-
     pub fn print_info(&self) {
         info!("Found an MBR partition scheme.");
         let mut mbr_table = Table::new();
         let mut partitions_table = Table::new();
-
         mbr_table.add_row(Row::new(vec![
             Cell::new("Bootloader"),
-            Cell::new(&(format!("{:?}", self.bootloader_disam))),
+            Cell::new(&self.bootloader_disam),
         ]));
-
-        // Now, we create a table for each partitions
         partitions_table.add_row(Row::new(vec![
             Cell::new("Bootable"),
             Cell::new("Start address (CHS)"),
@@ -323,30 +280,65 @@ impl MBR {
             Cell::new("First byte address"),
             Cell::new("Size (in sectors)"),
         ]));
-
         for partition in &self.partition_table {
             partitions_table.add_row(Row::new(vec![
-                Cell::new(&(format!("{:?}", partition.boot_indicator))),
-                Cell::new(&(format!("{:?}", partition.start_chs_tuple()))),
-                Cell::new(&(format!("{:?}", partition.end_chs_tuple()))),
-                Cell::new(&(format!("0x{:x}", partition.start_lba))),
-                Cell::new(&(format!("0x{:02x}", partition.partition_type))),
-                Cell::new(&(format!("{:?}", partition.description))),
-                Cell::new(&(format!("0x{:x}", partition.first_byte_addr))),
-                Cell::new(&(format!("0x{:x}", partition.size_sectors))),
+                Cell::new(&format!("{:?}", partition.boot_indicator)),
+                Cell::new(&format!("{:?}", partition.start_chs_tuple())),
+                Cell::new(&format!("{:?}", partition.end_chs_tuple())),
+                Cell::new(&format!("0x{:x}", partition.start_lba)),
+                Cell::new(&format!("0x{:02x}", partition.partition_type)),
+                Cell::new(&format!("{:?}", partition.description)),
+                Cell::new(&format!("0x{:x}", partition.first_byte_addr)),
+                Cell::new(&format!("0x{:x}", partition.size_sectors)),
             ]));
         }
-
         mbr_table.add_row(Row::new(vec![
             Cell::new("Partition tables entries"),
             Cell::new(&partitions_table.to_string()),
         ]));
-
         mbr_table.add_row(Row::new(vec![
             Cell::new("MBR Signature"),
-            Cell::new(&(format!("0x{:x}", self.boot_signature))),
+            Cell::new(&format!("0x{:x}", self.boot_signature)),
         ]));
-
         mbr_table.printstd();
+    }
+    pub fn to_output_string(&self) -> String {
+        let mut mbr_table = Table::new();
+        let mut partitions_table = Table::new();
+        mbr_table.add_row(Row::new(vec![
+            Cell::new("Bootloader"),
+            Cell::new(&self.bootloader_disam),
+        ]));
+        partitions_table.add_row(Row::new(vec![
+            Cell::new("Bootable"),
+            Cell::new("Start address (CHS)"),
+            Cell::new("End address (CHS)"),
+            Cell::new("Start address (LBA)"),
+            Cell::new("Partition type"),
+            Cell::new("Type Description"),
+            Cell::new("First byte address"),
+            Cell::new("Size (in sectors)"),
+        ]));
+        for partition in &self.partition_table {
+            partitions_table.add_row(Row::new(vec![
+                Cell::new(&format!("{:?}", partition.boot_indicator)),
+                Cell::new(&format!("{:?}", partition.start_chs_tuple())),
+                Cell::new(&format!("{:?}", partition.end_chs_tuple())),
+                Cell::new(&format!("0x{:x}", partition.start_lba)),
+                Cell::new(&format!("0x{:02x}", partition.partition_type)),
+                Cell::new(&format!("{:?}", partition.description)),
+                Cell::new(&format!("0x{:x}", partition.first_byte_addr)),
+                Cell::new(&format!("0x{:x}", partition.size_sectors)),
+            ]));
+        }
+        mbr_table.add_row(Row::new(vec![
+            Cell::new("Partition tables entries"),
+            Cell::new(&partitions_table.to_string()),
+        ]));
+        mbr_table.add_row(Row::new(vec![
+            Cell::new("MBR Signature"),
+            Cell::new(&format!("0x{:x}", self.boot_signature)),
+        ]));
+        mbr_table.to_string()
     }
 }

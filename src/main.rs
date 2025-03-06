@@ -1,21 +1,30 @@
-use clap::{value_parser, Arg, Command};
+use clap::{value_parser, Arg, ArgAction, Command};
 use exhume_body::Body;
 use exhume_partitions::Partitions;
 use log::{debug, error};
+use std::fs;
 
-fn process_file(file_path: &str, format: &str) {
+fn process_file(file_path: &str, format: &str, json: bool, output: Option<&String>) {
     let mut body = Body::new(file_path.to_string(), format);
-    // Instead of conditionally printing body info, log it at debug level.
     debug!("Created Body from '{}'.", file_path);
     debug!("Discovering partitions.");
     match Partitions::new(&mut body) {
-        Ok(discover_partitions) => {
-            discover_partitions.print_info();
+        Ok(partitions) => {
+            let output_str = if json {
+                serde_json::to_string_pretty(&partitions).unwrap()
+            } else {
+                partitions.to_output_string()
+            };
+            if let Some(output_path) = output {
+                fs::write(output_path, output_str).unwrap();
+            } else {
+                println!("{}", output_str);
+            }
         }
         Err(err) => {
             error!("Could not discover partitions: {:?}", err);
         }
-    };
+    }
 }
 
 fn main() {
@@ -47,9 +56,20 @@ fn main() {
                 .default_value("info")
                 .help("Set the log verbosity level"),
         )
+        .arg(
+            Arg::new("json")
+                .long("json")
+                .action(ArgAction::SetTrue)
+                .help("Display partitions in JSON format"),
+        )
+        .arg(
+            Arg::new("output")
+                .long("output")
+                .value_parser(value_parser!(String))
+                .help("Output file path"),
+        )
         .get_matches();
 
-    // Initialize the logger.
     let log_level_str = matches.get_one::<String>("log_level").unwrap();
     let level_filter = match log_level_str.as_str() {
         "error" => log::LevelFilter::Error,
@@ -63,5 +83,7 @@ fn main() {
 
     let file_path = matches.get_one::<String>("body").unwrap();
     let format = matches.get_one::<String>("format").unwrap();
-    process_file(file_path, format);
+    let json = matches.get_flag("json");
+    let output = matches.get_one::<String>("output");
+    process_file(file_path, format, json, output);
 }
