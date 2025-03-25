@@ -7,6 +7,7 @@ use std::io::{Cursor, Read};
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct MBRPartitionEntry {
+    pub id: Option<i64>,
     pub boot_indicator: u8,
     pub start_chs: [u8; 3],
     pub partition_type: u8,
@@ -223,6 +224,7 @@ impl MBR {
         cursor.read_exact(&mut mbr.bootloader).unwrap();
         for i in 0..4 {
             mbr.partition_table[i] = MBRPartitionEntry {
+                id: Some(i as i64),
                 boot_indicator: cursor.read_u8().unwrap(),
                 start_chs: [
                     cursor.read_u8().unwrap(),
