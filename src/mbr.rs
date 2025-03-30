@@ -1,6 +1,6 @@
 use byteorder::{LittleEndian, ReadBytesExt};
 use capstone::prelude::*;
-use log::{error, info};
+use log::info;
 use prettytable::{Cell, Row, Table};
 use serde::{Deserialize, Serialize};
 use std::io::{Cursor, Read};
