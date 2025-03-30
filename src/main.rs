@@ -45,8 +45,8 @@ fn main() {
                 .short('f')
                 .long("format")
                 .value_parser(value_parser!(String))
-                .required(true)
-                .help("The format of the file, either 'raw' or 'ewf'."),
+                .required(false)
+                .help("The format of the file, either 'raw', 'ewf', or 'auto'."),
         )
         .arg(
             Arg::new("log_level")
@@ -82,7 +82,8 @@ fn main() {
     env_logger::Builder::new().filter_level(level_filter).init();
 
     let file_path = matches.get_one::<String>("body").unwrap();
-    let format = matches.get_one::<String>("format").unwrap();
+    let auto = String::from("auto");
+    let format = matches.get_one::<String>("format").unwrap_or(&auto);
     let json = matches.get_flag("json");
     let output = matches.get_one::<String>("output");
     process_file(file_path, format, json, output);
