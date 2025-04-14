@@ -26,6 +26,7 @@ pub fn parse_ebr(body: &mut Body, start_lba: u32, sector_size: usize) -> Vec<MBR
 }
 
 pub fn print_info(partitions: &Vec<MBRPartitionEntry>) -> String {
+    let mut ebr_table = Table::new();
     let mut partitions_table = Table::new();
     partitions_table.add_row(Row::new(vec![
         Cell::new("Bootable"),
@@ -49,5 +50,10 @@ pub fn print_info(partitions: &Vec<MBRPartitionEntry>) -> String {
             Cell::new(&format!("0x{:X}", partition.size_sectors)),
         ]));
     }
-    partitions_table.to_string()
+
+    ebr_table.add_row(Row::new(vec![
+        Cell::new("Extented Boot Record Entries"),
+        Cell::new(&partitions_table.to_string()),
+    ]));
+    ebr_table.to_string()
 }
