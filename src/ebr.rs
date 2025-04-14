@@ -25,34 +25,7 @@ pub fn parse_ebr(body: &mut Body, start_lba: u32, sector_size: usize) -> Vec<MBR
     partitions_found
 }
 
-pub fn print_ebr(partitions: &Vec<MBRPartitionEntry>) {
-    let mut partitions_table = Table::new();
-    partitions_table.add_row(Row::new(vec![
-        Cell::new("Bootable"),
-        Cell::new("Start (CHS)"),
-        Cell::new("End (CHS)"),
-        Cell::new("Start (LBA)"),
-        Cell::new("Type"),
-        Cell::new("Description"),
-        Cell::new("First Byte Addr"),
-        Cell::new("Size (sectors)"),
-    ]));
-    for partition in partitions {
-        partitions_table.add_row(Row::new(vec![
-            Cell::new(&format!("0x{:02X}", partition.boot_indicator)),
-            Cell::new(&format!("{:?}", partition.start_chs_tuple())),
-            Cell::new(&format!("{:?}", partition.end_chs_tuple())),
-            Cell::new(&format!("0x{:X}", partition.start_lba)),
-            Cell::new(&format!("0x{:02X}", partition.partition_type)),
-            Cell::new(&format!("{:?}", partition.description)),
-            Cell::new(&format!("0x{:X}", partition.first_byte_addr)),
-            Cell::new(&format!("0x{:X}", partition.size_sectors)),
-        ]));
-    }
-    partitions_table.printstd();
-}
-
-pub fn to_output_string(partitions: &Vec<MBRPartitionEntry>) -> String {
+pub fn print_info(partitions: &Vec<MBRPartitionEntry>) -> String {
     let mut partitions_table = Table::new();
     partitions_table.add_row(Row::new(vec![
         Cell::new("Bootable"),

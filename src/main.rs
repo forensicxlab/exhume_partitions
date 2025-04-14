@@ -13,7 +13,7 @@ fn process_file(file_path: &str, format: &str, json: bool, output: Option<&Strin
             let output_str = if json {
                 serde_json::to_string_pretty(&partitions).unwrap()
             } else {
-                partitions.to_output_string()
+                partitions.print_info()
             };
             if let Some(output_path) = output {
                 fs::write(output_path, output_str).unwrap();

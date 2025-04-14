@@ -1,10 +1,11 @@
 use byteorder::{LittleEndian, ReadBytesExt};
 use capstone::prelude::*;
-use log::info;
+use log::debug;
 use prettytable::{Cell, Row, Table};
 use serde::{Deserialize, Serialize};
 use std::io::{Cursor, Read};
 
+const DEFAULT_SECTOR_SIZE: usize = 512;
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct MBRPartitionEntry {
     pub id: Option<i64>,
@@ -173,6 +174,7 @@ impl MBRPartitionEntry {
             0xE6 => "SpeedStor Read-only FAT16",
             0xEB => "BFS (BeOS/Haiku)",
             0xEC => "SkyOS SkyFS",
+            0xEE => "Protective MBR",
             0xF0 => "PA-RISC Linux Boot Loader",
             0xF2 => "Secondary FAT12",
             0xF4 => "SpeedStor FAT16B",
@@ -239,7 +241,7 @@ impl MBR {
                 ],
                 start_lba: cursor.read_u32::<LittleEndian>().unwrap(),
                 size_sectors: cursor.read_u32::<LittleEndian>().unwrap(),
-                sector_size: 512,
+                sector_size: DEFAULT_SECTOR_SIZE,
                 first_byte_addr: 0,
                 description: "Unknown".to_string(),
             };
@@ -261,50 +263,34 @@ impl MBR {
         mbr
     }
     pub fn is_mbr(&self) -> bool {
-        let mbr_signature = 0xAA55;
-        self.boot_signature == mbr_signature
-    }
-    pub fn print_info(&self) {
-        info!("Found an MBR partition scheme.");
-        let mut mbr_table = Table::new();
-        let mut partitions_table = Table::new();
-        mbr_table.add_row(Row::new(vec![
-            Cell::new("Bootloader"),
-            Cell::new(&self.bootloader_disam),
-        ]));
-        partitions_table.add_row(Row::new(vec![
-            Cell::new("Bootable"),
-            Cell::new("Start address (CHS)"),
-            Cell::new("End address (CHS)"),
-            Cell::new("Start address (LBA)"),
-            Cell::new("Partition type"),
-            Cell::new("Type Description"),
-            Cell::new("First byte address"),
-            Cell::new("Size (in sectors)"),
-        ]));
-        for partition in &self.partition_table {
-            partitions_table.add_row(Row::new(vec![
-                Cell::new(&format!("{:?}", partition.boot_indicator)),
-                Cell::new(&format!("{:?}", partition.start_chs_tuple())),
-                Cell::new(&format!("{:?}", partition.end_chs_tuple())),
-                Cell::new(&format!("0x{:x}", partition.start_lba)),
-                Cell::new(&format!("0x{:02x}", partition.partition_type)),
-                Cell::new(&format!("{:?}", partition.description)),
-                Cell::new(&format!("0x{:x}", partition.first_byte_addr)),
-                Cell::new(&format!("0x{:x}", partition.size_sectors)),
-            ]));
+        // First check the MBR signature.
+        if self.boot_signature != 0xAA55 {
+            debug!("Not MBR Signature match");
+            return false;
         }
-        mbr_table.add_row(Row::new(vec![
-            Cell::new("Partition tables entries"),
-            Cell::new(&partitions_table.to_string()),
-        ]));
-        mbr_table.add_row(Row::new(vec![
-            Cell::new("MBR Signature"),
-            Cell::new(&format!("0x{:x}", self.boot_signature)),
-        ]));
-        mbr_table.printstd();
+
+        // Look for at least one partition that seems valid.
+        let partition_ok = self.partition_table.iter().any(|p| {
+            // Partition type 0x00 means unused; at least one should be in use.
+            p.partition_type != 0 &&
+            // Valid boot indicators are 0x00 or 0x80.
+            (p.boot_indicator == 0x00 || p.boot_indicator == 0x80) &&
+            // The starting LBA should be non-zero.
+            p.start_lba != 0
+        });
+
+        partition_ok
     }
-    pub fn to_output_string(&self) -> String {
+
+    pub fn is_pmbr(&self) -> bool {
+        let protective_mbr = self.partition_table.iter().any(|p| {
+            // Partition type 0x00 means unused; at least one should be in use.
+            p.partition_type == 0xEE
+        });
+        protective_mbr
+    }
+
+    pub fn print_info(&self) -> String {
         let mut mbr_table = Table::new();
         let mut partitions_table = Table::new();
         mbr_table.add_row(Row::new(vec![
