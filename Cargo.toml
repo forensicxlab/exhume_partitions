@@ -1,8 +1,8 @@
 [package]
 name = "exhume_partitions"
-version = "0.2.0"
+version = "0.2.2"
 edition = "2021"
-description = "Extract partitions from a Body of data."
+description = "Extract GPT and (E/M)BR partitions from a Body of data."
 readme = "README.md"
 documentation = "https://www.forensicxlab.com/docs/category/exhume---partitions"
 authors = ["k1nd0ne"]
@@ -10,12 +10,10 @@ license = "GPL-2.0-or-later"
 
 [dependencies]
 exhume_body = "=0.1.1"
-exhume_lvm = "=0.1.0"
 serde = { version = "1", features = ["derive"] }
 serde_with = "3.12.0"
 glob = "0.3.1"
 byteorder = "1.4"
-uguid = "2.0.0"
 clap = "4.0"
 prettytable-rs = "^0.10"
 capstone = "0.10"

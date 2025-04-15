@@ -6,31 +6,35 @@ use std::io::{Cursor, Read};
 /// GPT Header (92 bytes)
 #[derive(Serialize, Default, Deserialize, Debug, Clone)]
 pub struct GPTHeader {
-    pub signature: [u8; 8],         // GPT signature ("EFI PART" in ASCII)
-    revision: u32,                  // GPT revision (typically 0x00010000)
-    header_size: u32,               // Size of the GPT header (typically 92 bytes)
-    crc32: u32,                     // CRC32 checksum of the GPT header
-    reserved: u32,                  // Reserved (usually 0)
-    current_lba: u64,               // LBA of the GPT header (usually 1)
-    backup_lba: u64, // LBA of the backup GPT header (typically last sector of the disk)
-    first_usable_lba: u64, // LBA of the first usable partition (typically 34)
-    last_usable_lba: u64, // LBA of the last usable partition
-    disk_guid: [u8; 16], // Unique disk GUID
-    pub partition_entry_lba: u64, // LBA of the partition entry array
+    pub signature: [u8; 8],    // GPT signature ("EFI PART" in ASCII)
+    pub revision: u32,         // GPT revision (typically 0x00010000)
+    pub header_size: u32,      // Size of the GPT header (typically 92 bytes)
+    pub crc32: u32,            // CRC32 checksum of the GPT header
+    pub reserved: u32,         // Reserved (usually 0)
+    pub current_lba: u64,      // LBA of the GPT header (usually 1)
+    pub backup_lba: u64,       // LBA of the backup GPT header (typically last sector of the disk)
+    pub first_usable_lba: u64, // LBA of the first usable partition (typically 34)
+    pub last_usable_lba: u64,  // LBA of the last usable partition
+    pub disk_guid: [u8; 16],   // Unique disk GUID
+    pub disk_guid_string: String,
+    pub partition_entry_lba: u64,   // LBA of the partition entry array
     pub num_partition_entries: u32, // Number of partition entries (typically 128)
-    pub partition_entry_size: u32, // Size of each partition entry (typically 128 bytes)
-    partition_array_crc32: u32, // CRC32 checksum of the partition entry array
+    pub partition_entry_size: u32,  // Size of each partition entry (typically 128 bytes)
+    pub partition_array_crc32: u32, // CRC32 checksum of the partition entry array
 }
 
 /// GPT Partition Entry (128 bytes)
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct GPTPartitionEntry {
-    pub partition_guid: [u8; 16],      // GUID of the partition
-    pub partition_type_guid: [u8; 16], // GUID of the partition type (e.g., Linux, Windows)
-    pub starting_lba: u64,             // Starting LBA of the partition
-    pub ending_lba: u64,               // Ending LBA of the partition
-    pub attributes: u64,               // Partition attributes (e.g., hidden, read-only)
-    pub partition_name: String,        // Partition name (UTF-16)
+    pub partition_guid: [u8; 16],           // GUID of the partition
+    pub partition_guid_string: String,      // String GUID of the partition
+    pub partition_type_guid: [u8; 16],      // GUID of the partition type (e.g., Linux, Windows)
+    pub partition_type_guid_string: String, // GUID String of the partition type.
+    pub description: String,                // Partition description string
+    pub starting_lba: u64,                  // Starting LBA of the partition
+    pub ending_lba: u64,                    // Ending LBA of the partition
+    pub attributes: u64,                    // Partition attributes (e.g., hidden, read-only)
+    pub partition_name: String,             // Partition name (UTF-16)
 }
 
 /// GPT Structure (contains header and partition entries)
@@ -217,6 +221,7 @@ impl GPT {
         gpt.header.first_usable_lba = cursor.read_u64::<LittleEndian>().unwrap();
         gpt.header.last_usable_lba = cursor.read_u64::<LittleEndian>().unwrap();
         cursor.read_exact(&mut gpt.header.disk_guid).unwrap();
+        gpt.header.disk_guid_string = format_guid(&mut gpt.header.disk_guid);
         gpt.header.partition_entry_lba = cursor.read_u64::<LittleEndian>().unwrap();
         gpt.header.num_partition_entries = cursor.read_u32::<LittleEndian>().unwrap();
         gpt.header.partition_entry_size = cursor.read_u32::<LittleEndian>().unwrap();
@@ -263,7 +268,7 @@ impl GPT {
         ]));
         gpt_table.add_row(Row::new(vec![
             Cell::new("Disk GUID"),
-            Cell::new(&format!("{}", format_guid(&self.header.disk_guid))),
+            Cell::new(&format!("{}", &self.header.disk_guid_string)),
         ]));
         gpt_table.add_row(Row::new(vec![
             Cell::new("Partition Entry LBA"),
@@ -295,9 +300,9 @@ impl GPT {
             // Let's not display unused entries 00000000-0000-0000-0000-000000000000
             if partition.partition_type_guid != [0u8; 16] {
                 partitions_table.add_row(Row::new(vec![
-                    Cell::new(&format!("{}", format_guid(&partition.partition_guid))),
-                    Cell::new(&format!("{}", format_guid(&partition.partition_type_guid))),
-                    Cell::new(&format!("{}", partition.partition_type_description())),
+                    Cell::new(&format!("{}", &partition.partition_guid_string)),
+                    Cell::new(&format!("{}", &partition.partition_type_guid_string)),
+                    Cell::new(&format!("{}", partition.description)),
                     Cell::new(&format!("0x{:x}", partition.starting_lba)),
                     Cell::new(&format!("0x{:x}", partition.ending_lba)),
                     Cell::new(&format!("{:?}", partition.attributes)),

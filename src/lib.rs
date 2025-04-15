@@ -5,7 +5,7 @@ pub mod mbr;
 use byteorder::{LittleEndian, ReadBytesExt};
 use ebr::print_info;
 use exhume_body::Body;
-use gpt::{GPTPartitionEntry, GPT};
+use gpt::{format_guid, GPTPartitionEntry, GPT};
 use log::{info, warn};
 use mbr::{MBRPartitionEntry, MBR};
 use serde::{Deserialize, Serialize};
@@ -145,12 +145,14 @@ fn discover_gpt_partitions(body: &mut Body) -> Result<GPT, Box<dyn Error>> {
             entry.attributes = cursor
                 .read_u64::<LittleEndian>()
                 .expect("Could not read the GPT attributes");
-
             let mut buffer = vec![0u16; 36];
             cursor
                 .read_u16_into::<byteorder::LittleEndian>(&mut buffer)
                 .unwrap();
             entry.partition_name = String::from_utf16_lossy(&buffer);
+            entry.description = entry.partition_type_description().to_string();
+            entry.partition_type_guid_string = format_guid(&mut entry.partition_type_guid);
+            entry.partition_guid_string = format_guid(&mut entry.partition_guid);
             gpt.partition_entries.push(entry);
         }
         Ok(gpt)
