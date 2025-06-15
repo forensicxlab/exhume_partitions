@@ -29,7 +29,7 @@ fn process_file(file_path: &str, format: &str, json: bool, output: Option<&Strin
 
 fn main() {
     let matches = Command::new("exhume_partitions")
-        .version("1.0")
+        .version("0.2.4")
         .author("ForensicXlab")
         .about("Exhume the partitions from a given body of data.")
         .arg(

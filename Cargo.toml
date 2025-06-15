@@ -1,6 +1,6 @@
 [package]
 name = "exhume_partitions"
-version = "0.2.3"
+version = "0.2.4"
 edition = "2021"
 description = "Extract GPT and (E/M)BR partitions from a Body of data."
 readme = "README.md"
@@ -9,7 +9,7 @@ authors = ["k1nd0ne"]
 license = "GPL-2.0-or-later"
 
 [dependencies]
-exhume_body = "=0.3.0"
+exhume_body = "=0.3.1"
 
 serde = { version = "1", features = ["derive"] }
 serde_with = "3.12.0"
