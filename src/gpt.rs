@@ -26,15 +26,16 @@ pub struct GPTHeader {
 /// GPT Partition Entry (128 bytes)
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct GPTPartitionEntry {
-    pub partition_guid: [u8; 16],           // GUID of the partition
-    pub partition_guid_string: String,      // String GUID of the partition
-    pub partition_type_guid: [u8; 16],      // GUID of the partition type (e.g., Linux, Windows)
+    pub id: Option<i64>, // Optionnal but used by Thanatology: Give an unique ID to the
+    pub partition_guid: [u8; 16], // GUID of the partition
+    pub partition_guid_string: String, // String GUID of the partition
+    pub partition_type_guid: [u8; 16], // GUID of the partition type (e.g., Linux, Windows)
     pub partition_type_guid_string: String, // GUID String of the partition type.
-    pub description: String,                // Partition description string
-    pub starting_lba: u64,                  // Starting LBA of the partition
-    pub ending_lba: u64,                    // Ending LBA of the partition
-    pub attributes: u64,                    // Partition attributes (e.g., hidden, read-only)
-    pub partition_name: String,             // Partition name (UTF-16)
+    pub description: String, // Partition description string
+    pub starting_lba: u64, // Starting LBA of the partition
+    pub ending_lba: u64, // Ending LBA of the partition
+    pub attributes: u64, // Partition attributes (e.g., hidden, read-only)
+    pub partition_name: String, // Partition name (UTF-16)
 }
 
 /// GPT Structure (contains header and partition entries)
