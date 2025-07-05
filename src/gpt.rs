@@ -165,7 +165,7 @@ impl GPTPartitionEntry {
             "966061ec-28e4-4b2e-b4a5-1f0a825a1d84" => "TILE‑Gx (dm‑verity)",
             "2c7357ed-ebd2-46d9-aec1-23d437ec2bf5" => "x86‑64 (dm‑verity)",
             "d13c5d3b-b5d1-422a-b29f-9454fdc89d76" => "x86 (dm‑verity)",
-
+            "48465300-0000-11aa-aa11-00306543ecac" => "Apple HFS+",
             // (The rest of the table follows in the same pattern:)
             // – /boot (XBOOTLDR)
             "bc13c2ff-59e6-4262-a352-b275fd6f7172" => "/boot (XBOOTLDR) partition",
@@ -199,6 +199,34 @@ impl GPTPartitionEntry {
             "e6a0c4fe-1339-466b-9aef-ef9e2ab8fa56" => "Android-IA AVB",
             _ => "Unknown partition type",
         }
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Self {
+        let mut cur = Cursor::new(&bytes);
+        let mut entry = GPTPartitionEntry::default();
+        cur.read_exact(&mut entry.partition_type_guid)
+            .expect("Could not read the partition type GUID.");
+        cur.read_exact(&mut entry.partition_guid)
+            .expect("Could not read the partition GUID.");
+        entry.starting_lba = cur
+            .read_u64::<LittleEndian>()
+            .expect("Could not read the starting LBA.");
+        entry.ending_lba = cur
+            .read_u64::<LittleEndian>()
+            .expect("Could not read the ending LBA.");
+        entry.attributes = cur
+            .read_u64::<LittleEndian>()
+            .expect("Could not read the partition attributes");
+
+        let mut utf16 = vec![0u16; 36];
+        cur.read_u16_into::<LittleEndian>(&mut utf16)
+            .expect("Could not read the partition name");
+        entry.partition_name = String::from_utf16_lossy(&utf16);
+        entry.description = entry.partition_type_description().to_string();
+        entry.partition_type_guid_string = format_guid(&entry.partition_type_guid);
+        entry.partition_guid_string = format_guid(&entry.partition_guid);
+
+        entry
     }
 }
 

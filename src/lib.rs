@@ -2,21 +2,18 @@ pub mod ebr;
 pub mod gpt;
 pub mod mbr;
 
-use byteorder::{LittleEndian, ReadBytesExt};
-use ebr::print_info;
 use exhume_body::Body;
-use gpt::{format_guid, GPTPartitionEntry, GPT};
-use log::{info, warn};
-use mbr::{MBRPartitionEntry, MBR};
+use gpt::{GPTHeader, GPTPartitionEntry, GPT};
+use log::{error, info, warn};
+use mbr::MBR;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
-use std::io::{Cursor, Read, Seek};
-const DEFAULT_SECTOR_SIZE: usize = 512;
+use std::io::{Read, Seek, SeekFrom};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Partitions {
     pub mbr: Option<MBR>,
-    pub ebr: Option<Vec<MBRPartitionEntry>>,
+    pub ebr: Option<Vec<MBR>>,
     pub gpt: Option<GPT>,
 }
 
@@ -35,9 +32,12 @@ impl Partitions {
             None => None,
         };
 
-        let gpt_record = match discover_gpt_partitions(body) {
+        let gpt_record = match discover_any_gpt(body) {
             Ok(gpt) => Some(gpt),
-            Err(_) => None,
+            Err(e) => {
+                warn!("No GPT Found: {:?}", e);
+                None
+            }
         };
 
         Ok(Partitions {
@@ -47,11 +47,11 @@ impl Partitions {
         })
     }
 
-    pub fn print_info(&self) -> String {
+    pub fn print_info(&self, bootloader: bool) -> String {
         let mut s = String::new();
 
         match &self.mbr {
-            Some(mbr) => s.push_str(&mbr.print_info()),
+            Some(mbr) => s.push_str(&mbr.print_info(&bootloader)),
             None => (),
         };
         s.push_str("\n");
@@ -59,7 +59,9 @@ impl Partitions {
         match &self.ebr {
             Some(ebr) => {
                 if ebr.len() > 0 {
-                    s.push_str(&print_info(&ebr))
+                    for ebr_entry in ebr {
+                        s.push_str(&ebr_entry.print_info(&bootloader))
+                    }
                 }
             }
             None => (),
@@ -74,8 +76,13 @@ impl Partitions {
     }
 }
 
+fn discover_any_gpt(body: &mut Body) -> Result<GPT, Box<dyn Error>> {
+    discover_gpt_partitions(body, false) // primary @ LBA 1
+        .or_else(|_| discover_gpt_partitions(body, true)) // backup @ last LBA
+}
+
 fn discover_mbr_partitions(body: &mut Body) -> Result<mbr::MBR, Box<dyn Error>> {
-    let mut bootsector = [0u8; DEFAULT_SECTOR_SIZE];
+    let mut bootsector: Vec<u8> = vec![0; body.get_sector_size() as usize];
     body.read(&mut bootsector).unwrap();
     let main_mbr = mbr::MBR::from_bytes(&bootsector);
     if main_mbr.is_mbr() {
@@ -90,12 +97,26 @@ fn discover_mbr_partitions(body: &mut Body) -> Result<mbr::MBR, Box<dyn Error>> 
     }
 }
 
-fn discover_ebr_partitions(body: &mut Body, main_mbr: &mbr::MBR) -> Vec<mbr::MBRPartitionEntry> {
-    let mut all_partitions: Vec<mbr::MBRPartitionEntry> = Vec::new();
+pub fn read_gpt_header_at(body: &mut Body, lba: u64) -> Result<GPTHeader, Box<dyn Error>> {
+    let sector_size = body.get_sector_size() as u64;
+    let mut hdr_bytes = [0u8; 92];
+    body.seek(SeekFrom::Start(lba * sector_size))?;
+    body.read_exact(&mut hdr_bytes)?;
+    let gpt = GPT::from_bytes(&hdr_bytes);
+    if gpt.is_gpt() {
+        Ok(gpt.header)
+    } else {
+        error!("No GPT signature found at requested LBA");
+        Err("No GPT signature found at requested LBA".into())
+    }
+}
+
+fn discover_ebr_partitions(body: &mut Body, main_mbr: &mbr::MBR) -> Vec<MBR> {
+    let mut all_partitions: Vec<MBR> = Vec::new();
     for p in &main_mbr.partition_table {
         match p.partition_type {
             0x05 | 0x0F | 0x85 => {
-                info!("Extended partition discovered.");
+                info!("Extended Boot Record (EBR) partition discovered.");
                 let extended_partitions = ebr::parse_ebr(body, p.start_lba, p.sector_size);
                 all_partitions.extend(extended_partitions);
             }
@@ -105,59 +126,59 @@ fn discover_ebr_partitions(body: &mut Body, main_mbr: &mbr::MBR) -> Vec<mbr::MBR
     all_partitions
 }
 
-fn discover_gpt_partitions(body: &mut Body) -> Result<GPT, Box<dyn Error>> {
-    let mut lba_1 = [0u8; 1024];
-    body.seek(std::io::SeekFrom::Start(DEFAULT_SECTOR_SIZE as u64))
-        .expect("Could not seek to lba_1 for GPT header parsing.");
-    body.read(&mut lba_1)
-        .expect("Could not read data from the source evidence.");
-    let mut gpt = GPT::from_bytes(&lba_1);
-    if gpt.is_gpt() {
-        info!("Discovered a GPT partition scheme");
-        // Now let's parse each entry using the header information
-        body.seek(std::io::SeekFrom::Start(
-            gpt.header.partition_entry_lba * DEFAULT_SECTOR_SIZE as u64,
-        ))
-        .expect("Could not seek to the GPT partition entry LBA");
-        // Read Partition Entries (128 bytes each)
-        let num_entries = gpt.header.num_partition_entries as usize;
-        gpt.partition_entries = Vec::with_capacity(num_entries);
+/// Read the GPT (primary or backup) and all of its partition-table entries.
+/// Parse the primary header at LBA 1 or parse the backup header at the last LBA of the image.
+fn discover_gpt_partitions(body: &mut Body, backup: bool) -> Result<GPT, Box<dyn Error>> {
+    let sector_size = body.get_sector_size() as u64;
 
-        let mut entry_data = vec![0u8; gpt.header.partition_entry_size as usize]; // Each GPT entry is 128 bytes
-        for _ in 0..num_entries {
-            body.read_exact(&mut entry_data)
-                .expect("Could not read a partition entry.");
-            let mut cursor = Cursor::new(&entry_data);
-
-            let mut entry = GPTPartitionEntry::default();
-            cursor
-                .read_exact(&mut entry.partition_type_guid)
-                .expect("Could not read the partition type GUID.");
-            cursor
-                .read_exact(&mut entry.partition_guid)
-                .expect("Could not read the partition GUID.");
-            entry.starting_lba = cursor
-                .read_u64::<LittleEndian>()
-                .expect("Could not read the starting LBA.");
-            entry.ending_lba = cursor
-                .read_u64::<LittleEndian>()
-                .expect("Could not read the ending LBA.");
-            entry.attributes = cursor
-                .read_u64::<LittleEndian>()
-                .expect("Could not read the GPT attributes");
-            let mut buffer = vec![0u16; 36];
-            cursor
-                .read_u16_into::<byteorder::LittleEndian>(&mut buffer)
-                .unwrap();
-            entry.partition_name = String::from_utf16_lossy(&buffer);
-            entry.description = entry.partition_type_description().to_string();
-            entry.partition_type_guid_string = format_guid(&mut entry.partition_type_guid);
-            entry.partition_guid_string = format_guid(&mut entry.partition_guid);
-            gpt.partition_entries.push(entry);
+    // Primary GPT header is always at LBA 1
+    // Backup GPT header is always at the last LBA of the disk / image
+    let target_lba = if backup {
+        let end_offset = body.seek(SeekFrom::End(0))?; // byte position == file length
+        if end_offset < sector_size {
+            return Err("Evidence is smaller than one sector".into());
         }
-        Ok(gpt)
+        (end_offset / sector_size) - 1 // last LBA
     } else {
+        1 // primary header
+    };
+
+    let mut hdr_raw = vec![0u8; sector_size as usize];
+    body.seek(SeekFrom::Start(target_lba * sector_size))?;
+    body.read_exact(&mut hdr_raw)?;
+
+    let mut gpt = GPT::from_bytes(&hdr_raw);
+
+    if !gpt.is_gpt() {
         warn!("No GPT signature found");
         return Err("No GPT signature found".into());
     }
+
+    info!(
+        "Discovered a {} GPT header at LBA {}",
+        if backup { "backup" } else { "primary" },
+        target_lba
+    );
+
+    body.seek(SeekFrom::Start(
+        gpt.header.partition_entry_lba * sector_size,
+    ))?;
+
+    let num_entries = gpt.header.num_partition_entries as usize;
+    let entry_size = gpt.header.partition_entry_size as usize;
+    let mut entry_buf = vec![0u8; entry_size];
+
+    gpt.partition_entries = Vec::with_capacity(num_entries);
+
+    for _ in 0..num_entries {
+        body.read_exact(&mut entry_buf)?;
+        let entry = GPTPartitionEntry::from_bytes(&entry_buf);
+
+        // Skip unused (all-zero) entries to keep the output tidy
+        if entry.partition_type_guid != [0u8; 16] {
+            gpt.partition_entries.push(entry);
+        }
+    }
+
+    Ok(gpt)
 }

@@ -4,7 +4,13 @@ use exhume_partitions::Partitions;
 use log::{debug, error};
 use std::fs;
 
-fn process_file(file_path: &str, format: &str, json: bool, output: Option<&String>) {
+fn process_file(
+    file_path: &str,
+    format: &str,
+    json: bool,
+    output: Option<&String>,
+    bootloader: bool,
+) {
     let mut body = Body::new(file_path.to_string(), format);
     debug!("Created Body from '{}'.", file_path);
     debug!("Discovering partitions.");
@@ -13,7 +19,7 @@ fn process_file(file_path: &str, format: &str, json: bool, output: Option<&Strin
             let output_str = if json {
                 serde_json::to_string_pretty(&partitions).unwrap()
             } else {
-                partitions.print_info()
+                partitions.print_info(bootloader)
             };
             if let Some(output_path) = output {
                 fs::write(output_path, output_str).unwrap();
@@ -63,6 +69,18 @@ fn main() {
                 .help("Display partitions in JSON format"),
         )
         .arg(
+            Arg::new("bootloader")
+                .long("bootloader")
+                .action(ArgAction::SetTrue)
+                .help("Display full MBR and potential EBR with bootstrap code"),
+        )
+        .arg(
+            Arg::new("backup")
+                .long("backup")
+                .action(ArgAction::SetTrue)
+                .help("Display the GPT backup if found"),
+        )
+        .arg(
             Arg::new("output")
                 .long("output")
                 .value_parser(value_parser!(String))
@@ -86,5 +104,6 @@ fn main() {
     let format = matches.get_one::<String>("format").unwrap_or(&auto);
     let json = matches.get_flag("json");
     let output = matches.get_one::<String>("output");
-    process_file(file_path, format, json, output);
+    let bootloader = matches.get_flag("bootloader");
+    process_file(file_path, format, json, output, bootloader);
 }

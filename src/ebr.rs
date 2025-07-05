@@ -3,8 +3,8 @@ use exhume_body::Body;
 use prettytable::{Cell, Row, Table};
 use std::io::{Read, Seek, SeekFrom};
 
-pub fn parse_ebr(body: &mut Body, start_lba: u32, sector_size: usize) -> Vec<MBRPartitionEntry> {
-    let mut partitions_found = Vec::new();
+pub fn parse_ebr(body: &mut Body, start_lba: u32, sector_size: usize) -> Vec<MBR> {
+    let mut ebr_found = Vec::new();
     let ebr_absolute_lba = start_lba as usize * sector_size;
     body.seek(SeekFrom::Start(ebr_absolute_lba as u64)).unwrap();
     let mut ebr_data = vec![0u8; 512];
@@ -14,15 +14,14 @@ pub fn parse_ebr(body: &mut Body, start_lba: u32, sector_size: usize) -> Vec<MBR
     if logical_partition.partition_type != 0x00 {
         logical_partition.start_lba = start_lba + logical_partition.start_lba;
         logical_partition.first_byte_addr = logical_partition.start_lba as usize * sector_size;
-        partitions_found.push(logical_partition.clone());
     }
     let next_ebr_partition = &ebr.partition_table[1];
     if next_ebr_partition.partition_type != 0x00 {
         let next_ebr_start = next_ebr_partition.start_lba;
-        let mut further = parse_ebr(body, next_ebr_start, sector_size);
-        partitions_found.append(&mut further);
+        ebr_found.extend(parse_ebr(body, next_ebr_start, sector_size));
     }
-    partitions_found
+    ebr_found.push(ebr.clone());
+    ebr_found
 }
 
 pub fn print_info(partitions: &Vec<MBRPartitionEntry>) -> String {

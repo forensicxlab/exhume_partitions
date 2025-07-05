@@ -290,13 +290,16 @@ impl MBR {
         protective_mbr
     }
 
-    pub fn print_info(&self) -> String {
+    pub fn print_info(&self, bootloader: &bool) -> String {
         let mut mbr_table = Table::new();
         let mut partitions_table = Table::new();
-        mbr_table.add_row(Row::new(vec![
-            Cell::new("Bootloader"),
-            Cell::new(&self.bootloader_disam),
-        ]));
+        if *bootloader {
+            mbr_table.add_row(Row::new(vec![
+                Cell::new("Bootloader"),
+                Cell::new(&self.bootloader_disam),
+            ]));
+        }
+
         partitions_table.add_row(Row::new(vec![
             Cell::new("Bootable"),
             Cell::new("Start address (CHS)"),
