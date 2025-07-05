@@ -35,7 +35,7 @@ fn process_file(
 
 fn main() {
     let matches = Command::new("exhume_partitions")
-        .version("0.2.4")
+        .version("0.3.1")
         .author("ForensicXlab")
         .about("Exhume the partitions from a given body of data.")
         .arg(
@@ -73,12 +73,6 @@ fn main() {
                 .long("bootloader")
                 .action(ArgAction::SetTrue)
                 .help("Display full MBR and potential EBR with bootstrap code"),
-        )
-        .arg(
-            Arg::new("backup")
-                .long("backup")
-                .action(ArgAction::SetTrue)
-                .help("Display the GPT backup if found"),
         )
         .arg(
             Arg::new("output")
