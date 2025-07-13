@@ -347,9 +347,9 @@ checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
 name = "exhume_body"
-version = "0.3.1"
+version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38cb97e4f83d267de104a76f456e73430e576772a0723fe8ebe8378e6d498563"
+checksum = "548d96bf0663e21bf6e6283572daac648d384c51bb6780526cee525475808e93"
 dependencies = [
  "clap",
  "clap-num",
@@ -364,7 +364,7 @@ dependencies = [
 
 [[package]]
 name = "exhume_partitions"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "byteorder",
  "capstone",

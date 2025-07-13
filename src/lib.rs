@@ -150,8 +150,7 @@ fn discover_gpt_partitions(body: &mut Body, backup: bool) -> Result<GPT, Box<dyn
     let mut gpt = GPT::from_bytes(&hdr_raw);
 
     if !gpt.is_gpt() {
-        warn!("No GPT signature found");
-        return Err("No GPT signature found".into());
+        return Err("Invalid Signature".into());
     }
 
     info!(
