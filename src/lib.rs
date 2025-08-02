@@ -169,10 +169,10 @@ fn discover_gpt_partitions(body: &mut Body, backup: bool) -> Result<GPT, Box<dyn
 
     gpt.partition_entries = Vec::with_capacity(num_entries);
 
-    for _ in 0..num_entries {
+    for i in 0..num_entries {
         body.read_exact(&mut entry_buf)?;
-        let entry = GPTPartitionEntry::from_bytes(&entry_buf);
-
+        let mut entry = GPTPartitionEntry::from_bytes(&entry_buf);
+        entry.id = Some(i as i64);
         // Skip unused (all-zero) entries to keep the output tidy
         if entry.partition_type_guid != [0u8; 16] {
             gpt.partition_entries.push(entry);
