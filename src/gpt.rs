@@ -33,6 +33,8 @@ pub struct GPTPartitionEntry {
     pub partition_type_guid_string: String, // GUID String of the partition type.
     pub description: String, // Partition description string
     pub starting_lba: u64, // Starting LBA of the partition
+    pub first_byte_addr: u64, // Absolute address
+    pub size_sectors: u64, // Size (in sectors)
     pub ending_lba: u64, // Ending LBA of the partition
     pub attributes: u64, // Partition attributes (e.g., hidden, read-only)
     pub partition_name: String, // Partition name (UTF-16)
@@ -225,7 +227,6 @@ impl GPTPartitionEntry {
         entry.description = entry.partition_type_description().to_string();
         entry.partition_type_guid_string = format_guid(&entry.partition_type_guid);
         entry.partition_guid_string = format_guid(&entry.partition_guid);
-
         entry
     }
 }
@@ -317,11 +318,13 @@ impl GPT {
         ]));
 
         partitions_table.add_row(Row::new(vec![
-            Cell::new("Partition GUID"),
-            Cell::new("Partition Type GUID"),
-            Cell::new("Partition Type Description"),
-            Cell::new("Start address (LBA)"),
-            Cell::new("End address (LBA)"),
+            Cell::new("GUID"),
+            Cell::new("Type GUID"),
+            Cell::new("Description"),
+            Cell::new("Start addr (LBA)"),
+            Cell::new("End addr (LBA)"),
+            Cell::new("Start addr (Absolute)"),
+            Cell::new("Size (sectors)"),
             Cell::new("Attributes"),
             Cell::new("Partition Name"),
         ]));
@@ -334,6 +337,8 @@ impl GPT {
                     Cell::new(&format!("{}", partition.description)),
                     Cell::new(&format!("0x{:x}", partition.starting_lba)),
                     Cell::new(&format!("0x{:x}", partition.ending_lba)),
+                    Cell::new(&format!("0x{:x}", partition.first_byte_addr)),
+                    Cell::new(&format!("0x{:x}", partition.size_sectors)),
                     Cell::new(&format!("{:?}", partition.attributes)),
                     Cell::new(&format!("{}", partition.partition_name)),
                 ]));
