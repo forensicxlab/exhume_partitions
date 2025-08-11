@@ -302,13 +302,13 @@ impl MBR {
 
         partitions_table.add_row(Row::new(vec![
             Cell::new("Bootable"),
-            Cell::new("Start address (CHS)"),
-            Cell::new("End address (CHS)"),
-            Cell::new("Start address (LBA)"),
+            Cell::new("Start addr (CHS)"),
+            Cell::new("End addr (CHS)"),
+            Cell::new("Start addr (LBA)"),
             Cell::new("Partition type"),
             Cell::new("Type Description"),
-            Cell::new("First byte address"),
-            Cell::new("Size (in sectors)"),
+            Cell::new("Start addr (absolute)"),
+            Cell::new("Size (sectors)"),
         ]));
         for partition in &self.partition_table {
             partitions_table.add_row(Row::new(vec![
