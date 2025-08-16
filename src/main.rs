@@ -35,7 +35,7 @@ fn process_file(
 
 fn main() {
     let matches = Command::new("exhume_partitions")
-        .version("0.3.2")
+        .version("0.3.3")
         .author("ForensicXlab")
         .about("Exhume the partitions from a given body of data.")
         .arg(
