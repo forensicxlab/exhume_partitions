@@ -1,4 +1,4 @@
-use clap::{value_parser, Arg, ArgAction, Command};
+use clap::*;
 use exhume_body::Body;
 use exhume_partitions::Partitions;
 use log::{debug, error};
@@ -35,8 +35,8 @@ fn process_file(
 
 fn main() {
     let matches = Command::new("exhume_partitions")
-        .version("0.3.3")
-        .author("ForensicXlab")
+        .version(crate_version!())
+        .author(crate_authors!())
         .about("Exhume the partitions from a given body of data.")
         .arg(
             Arg::new("body")
