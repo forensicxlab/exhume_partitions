@@ -251,7 +251,7 @@ impl GPT {
         gpt.header.first_usable_lba = cursor.read_u64::<LittleEndian>().unwrap();
         gpt.header.last_usable_lba = cursor.read_u64::<LittleEndian>().unwrap();
         cursor.read_exact(&mut gpt.header.disk_guid).unwrap();
-        gpt.header.disk_guid_string = format_guid(&mut gpt.header.disk_guid);
+        gpt.header.disk_guid_string = format_guid(&gpt.header.disk_guid);
         gpt.header.partition_entry_lba = cursor.read_u64::<LittleEndian>().unwrap();
         gpt.header.num_partition_entries = cursor.read_u32::<LittleEndian>().unwrap();
         gpt.header.partition_entry_size = cursor.read_u32::<LittleEndian>().unwrap();
@@ -298,7 +298,7 @@ impl GPT {
         ]));
         gpt_table.add_row(Row::new(vec![
             Cell::new("Disk GUID"),
-            Cell::new(&format!("{}", &self.header.disk_guid_string)),
+            Cell::new(&self.header.disk_guid_string),
         ]));
         gpt_table.add_row(Row::new(vec![
             Cell::new("Partition Entry LBA"),
@@ -332,15 +332,15 @@ impl GPT {
             // Let's not display unused entries 00000000-0000-0000-0000-000000000000
             if partition.partition_type_guid != [0u8; 16] {
                 partitions_table.add_row(Row::new(vec![
-                    Cell::new(&format!("{}", &partition.partition_guid_string)),
-                    Cell::new(&format!("{}", &partition.partition_type_guid_string)),
-                    Cell::new(&format!("{}", partition.description)),
+                    Cell::new(&partition.partition_guid_string),
+                    Cell::new(&partition.partition_type_guid_string),
+                    Cell::new(&partition.description),
                     Cell::new(&format!("0x{:x}", partition.starting_lba)),
                     Cell::new(&format!("0x{:x}", partition.ending_lba)),
                     Cell::new(&format!("0x{:x}", partition.first_byte_addr)),
                     Cell::new(&format!("0x{:x}", partition.size_sectors)),
                     Cell::new(&format!("{:?}", partition.attributes)),
-                    Cell::new(&format!("{}", partition.partition_name)),
+                    Cell::new(&partition.partition_name),
                 ]));
             }
         }

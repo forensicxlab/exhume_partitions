@@ -8,11 +8,11 @@ pub fn parse_ebr(body: &mut Body, start_lba: u32, sector_size: usize) -> Vec<MBR
     let ebr_absolute_lba = start_lba as usize * sector_size;
     body.seek(SeekFrom::Start(ebr_absolute_lba as u64)).unwrap();
     let mut ebr_data = vec![0u8; 512];
-    body.read(&mut ebr_data).unwrap();
+    body.read_exact(&mut ebr_data).unwrap();
     let mut ebr = MBR::from_bytes(&ebr_data);
     let logical_partition = &mut ebr.partition_table[0];
     if logical_partition.partition_type != 0x00 {
-        logical_partition.start_lba = start_lba + logical_partition.start_lba;
+        logical_partition.start_lba += start_lba;
         logical_partition.first_byte_addr = logical_partition.start_lba as usize * sector_size;
     }
     let next_ebr_partition = &ebr.partition_table[1];

@@ -27,10 +27,7 @@ impl Partitions {
             }
         };
 
-        let ebr_record = match &mbr_record {
-            Some(mbr) => Some(discover_ebr_partitions(body, mbr)),
-            None => None,
-        };
+        let ebr_record = mbr_record.as_ref().map(|mbr| discover_ebr_partitions(body, mbr));
 
         let gpt_record = match discover_any_gpt(body) {
             Ok(gpt) => Some(gpt),
@@ -50,27 +47,22 @@ impl Partitions {
     pub fn print_info(&self, bootloader: bool) -> String {
         let mut s = String::new();
 
-        match &self.mbr {
-            Some(mbr) => s.push_str(&mbr.print_info(&bootloader)),
-            None => (),
-        };
-        s.push_str("\n");
+        if let Some(mbr) = &self.mbr {
+            s.push_str(&mbr.print_info(&bootloader));
+        }
+        s.push('\n');
 
-        match &self.ebr {
-            Some(ebr) => {
-                if ebr.len() > 0 {
-                    for ebr_entry in ebr {
-                        s.push_str(&ebr_entry.print_info(&bootloader))
-                    }
+        if let Some(ebr) = &self.ebr {
+            if !ebr.is_empty() {
+                for ebr_entry in ebr {
+                    s.push_str(&ebr_entry.print_info(&bootloader))
                 }
             }
-            None => (),
-        };
+        }
 
-        match &self.gpt {
-            Some(gpt) => s.push_str(&gpt.print_info()),
-            None => (),
-        };
+        if let Some(gpt) = &self.gpt {
+            s.push_str(&gpt.print_info());
+        }
 
         s
     }
@@ -83,7 +75,7 @@ fn discover_any_gpt(body: &mut Body) -> Result<GPT, Box<dyn Error>> {
 
 fn discover_mbr_partitions(body: &mut Body) -> Result<mbr::MBR, Box<dyn Error>> {
     let mut bootsector: Vec<u8> = vec![0; body.get_sector_size() as usize];
-    body.read(&mut bootsector).unwrap();
+    body.read_exact(&mut bootsector).unwrap();
     let main_mbr = mbr::MBR::from_bytes(&bootsector);
     if main_mbr.is_mbr() {
         info!("Detected an MBR partition scheme.");
@@ -93,7 +85,7 @@ fn discover_mbr_partitions(body: &mut Body) -> Result<mbr::MBR, Box<dyn Error>> 
         Ok(main_mbr)
     } else {
         warn!("No MBR signature found");
-        return Err("No MBR signature found".into());
+        Err("No MBR signature found".into())
     }
 }
 
