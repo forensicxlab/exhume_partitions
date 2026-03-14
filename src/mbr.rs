@@ -18,6 +18,7 @@ pub struct MBRPartitionEntry {
     pub sector_size: usize,
     pub first_byte_addr: usize,
     pub description: String,
+    pub fvek: Option<String>,
 }
 
 impl MBRPartitionEntry {
@@ -244,6 +245,7 @@ impl MBR {
                 sector_size: DEFAULT_SECTOR_SIZE,
                 first_byte_addr: 0,
                 description: "Unknown".to_string(),
+                fvek: None,
             };
             mbr.partition_table[i].first_byte_addr =
                 mbr.partition_table[i].sector_size * mbr.partition_table[i].start_lba as usize;

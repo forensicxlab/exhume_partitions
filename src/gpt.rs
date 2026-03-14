@@ -38,6 +38,7 @@ pub struct GPTPartitionEntry {
     pub ending_lba: u64, // Ending LBA of the partition
     pub attributes: u64, // Partition attributes (e.g., hidden, read-only)
     pub partition_name: String, // Partition name (UTF-16)
+    pub fvek: Option<String>,
 }
 
 /// GPT Structure (contains header and partition entries)
@@ -227,6 +228,7 @@ impl GPTPartitionEntry {
         entry.description = entry.partition_type_description().to_string();
         entry.partition_type_guid_string = format_guid(&entry.partition_type_guid);
         entry.partition_guid_string = format_guid(&entry.partition_guid);
+        entry.fvek = None;
         entry
     }
 }
