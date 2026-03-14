@@ -52,7 +52,9 @@ fn main() {
                 .long("format")
                 .value_parser(value_parser!(String))
                 .required(false)
-                .help("The format of the file, either 'raw', 'ewf', or 'auto'."),
+                .help(
+                    "The format of the file, either 'raw','vmdk', 'aff', 'aff4', 'ewf', or 'auto'.",
+                ),
         )
         .arg(
             Arg::new("log_level")
