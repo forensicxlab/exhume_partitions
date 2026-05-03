@@ -264,7 +264,8 @@ impl GPT {
 
     pub fn print_info(&self) -> String {
         let mut gpt_table = Table::new();
-        let mut partitions_table = Table::new();
+        let mut partitions_output = String::new();
+
         gpt_table.add_row(Row::new(vec![
             Cell::new("Signature"),
             Cell::new(&format!(
@@ -299,6 +300,10 @@ impl GPT {
             Cell::new(&format!("0x{:x}", &self.header.first_usable_lba)),
         ]));
         gpt_table.add_row(Row::new(vec![
+            Cell::new("Last Usable LBA"),
+            Cell::new(&format!("0x{:x}", &self.header.last_usable_lba)),
+        ]));
+        gpt_table.add_row(Row::new(vec![
             Cell::new("Disk GUID"),
             Cell::new(&self.header.disk_guid_string),
         ]));
@@ -319,37 +324,69 @@ impl GPT {
             Cell::new(&format!("0x{:x}", &self.header.partition_array_crc32)),
         ]));
 
-        partitions_table.add_row(Row::new(vec![
-            Cell::new("GUID"),
-            Cell::new("Type GUID"),
-            Cell::new("Description"),
-            Cell::new("Start addr (LBA)"),
-            Cell::new("End addr (LBA)"),
-            Cell::new("Start addr (Absolute)"),
-            Cell::new("Size (sectors)"),
-            Cell::new("Attributes"),
-            Cell::new("Partition Name"),
-        ]));
-        for partition in &self.partition_entries {
+        let mut visible_partition_count = 0;
+        for (index, partition) in self.partition_entries.iter().enumerate() {
             // Let's not display unused entries 00000000-0000-0000-0000-000000000000
             if partition.partition_type_guid != [0u8; 16] {
-                partitions_table.add_row(Row::new(vec![
-                    Cell::new(&partition.partition_guid_string),
-                    Cell::new(&partition.partition_type_guid_string),
-                    Cell::new(&partition.description),
-                    Cell::new(&format!("0x{:x}", partition.starting_lba)),
-                    Cell::new(&format!("0x{:x}", partition.ending_lba)),
-                    Cell::new(&format!("0x{:x}", partition.first_byte_addr)),
-                    Cell::new(&format!("0x{:x}", partition.size_sectors)),
-                    Cell::new(&format!("{:?}", partition.attributes)),
-                    Cell::new(&partition.partition_name),
+                visible_partition_count += 1;
+                let partition_name = partition.partition_name.trim_end_matches('\0');
+                let mut partition_table = Table::new();
+
+                partition_table.add_row(Row::new(vec![
+                    Cell::new("Entry"),
+                    Cell::new(&format!("#{}", index + 1)),
                 ]));
+                partition_table.add_row(Row::new(vec![
+                    Cell::new("GUID"),
+                    Cell::new(&partition.partition_guid_string),
+                ]));
+                partition_table.add_row(Row::new(vec![
+                    Cell::new("Type GUID"),
+                    Cell::new(&partition.partition_type_guid_string),
+                ]));
+                partition_table.add_row(Row::new(vec![
+                    Cell::new("Description"),
+                    Cell::new(&partition.description),
+                ]));
+                partition_table.add_row(Row::new(vec![
+                    Cell::new("Start addr (LBA)"),
+                    Cell::new(&format!("0x{:x}", partition.starting_lba)),
+                ]));
+                partition_table.add_row(Row::new(vec![
+                    Cell::new("End addr (LBA)"),
+                    Cell::new(&format!("0x{:x}", partition.ending_lba)),
+                ]));
+                partition_table.add_row(Row::new(vec![
+                    Cell::new("Start addr (Absolute)"),
+                    Cell::new(&format!("0x{:x}", partition.first_byte_addr)),
+                ]));
+                partition_table.add_row(Row::new(vec![
+                    Cell::new("Size (sectors)"),
+                    Cell::new(&format!("0x{:x}", partition.size_sectors)),
+                ]));
+                partition_table.add_row(Row::new(vec![
+                    Cell::new("Attributes"),
+                    Cell::new(&format!("{:?}", partition.attributes)),
+                ]));
+                partition_table.add_row(Row::new(vec![
+                    Cell::new("Partition Name"),
+                    Cell::new(partition_name),
+                ]));
+
+                partitions_output.push_str(&partition_table.to_string());
+                partitions_output.push('\n');
             }
         }
+
+        if visible_partition_count == 0 {
+            partitions_output.push_str("No used GPT partition entries found.\n");
+        }
+
         gpt_table.add_row(Row::new(vec![
-            Cell::new("Partition tables entries"),
-            Cell::new(&partitions_table.to_string()),
+            Cell::new("Partition table entries"),
+            Cell::new(&partitions_output),
         ]));
+
         gpt_table.to_string()
     }
 }
