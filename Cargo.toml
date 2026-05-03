@@ -9,7 +9,7 @@ authors = ["k1nd0ne"]
 license = "GPL-2.0-or-later"
 
 [dependencies]
-exhume_body = { path = "../exhume_body" }
+exhume_body = "=0.5.5"
 
 serde = { version = "1", features = ["derive"] }
 serde_with = "3.16.1"
