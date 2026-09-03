@@ -1,7 +1,102 @@
 use byteorder::{LittleEndian, ReadBytesExt};
 use prettytable::{Cell, Row, Table};
 use serde::{Deserialize, Serialize};
-use std::io::{Cursor, Read};
+use std::error::Error;
+use std::fmt;
+use std::io::{self, Cursor, Read};
+
+/// Minimum byte length of a GPT 1.0 header.
+pub const GPT_HEADER_MIN_SIZE: usize = 92;
+
+/// Minimum byte length of a GPT partition-table entry.
+pub const GPT_PARTITION_ENTRY_MIN_SIZE: usize = 128;
+
+/// Fallible GPT decoding and validation errors.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GptParseError {
+    Truncated {
+        structure: &'static str,
+        needed: usize,
+        actual: usize,
+    },
+    Decode {
+        structure: &'static str,
+        message: String,
+    },
+    InvalidSignature,
+    InvalidHeader(String),
+    InvalidPartitionEntry {
+        index: u32,
+        message: String,
+    },
+    ArithmeticOverflow(&'static str),
+    OutsideImage {
+        structure: &'static str,
+        start_bytes: u64,
+        length_bytes: u64,
+        image_size_bytes: u64,
+    },
+    HeaderCrcMismatch {
+        expected: u32,
+        actual: u32,
+    },
+    PartitionArrayCrcMismatch {
+        expected: u32,
+        actual: u32,
+    },
+}
+
+impl fmt::Display for GptParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Truncated {
+                structure,
+                needed,
+                actual,
+            } => write!(
+                f,
+                "truncated {structure}: need at least {needed} bytes, got {actual}"
+            ),
+            Self::Decode { structure, message } => {
+                write!(f, "could not decode {structure}: {message}")
+            }
+            Self::InvalidSignature => write!(f, "invalid GPT signature"),
+            Self::InvalidHeader(message) => write!(f, "invalid GPT header: {message}"),
+            Self::InvalidPartitionEntry { index, message } => {
+                write!(f, "invalid GPT partition entry {index}: {message}")
+            }
+            Self::ArithmeticOverflow(field) => {
+                write!(f, "integer overflow while calculating {field}")
+            }
+            Self::OutsideImage {
+                structure,
+                start_bytes,
+                length_bytes,
+                image_size_bytes,
+            } => write!(
+                f,
+                "{structure} byte range starting at {start_bytes} with length {length_bytes} exceeds image size {image_size_bytes}"
+            ),
+            Self::HeaderCrcMismatch { expected, actual } => write!(
+                f,
+                "GPT header CRC mismatch: stored {expected:#010x}, computed {actual:#010x}"
+            ),
+            Self::PartitionArrayCrcMismatch { expected, actual } => write!(
+                f,
+                "GPT partition-array CRC mismatch: stored {expected:#010x}, computed {actual:#010x}"
+            ),
+        }
+    }
+}
+
+impl Error for GptParseError {}
+
+fn decode_error(structure: &'static str, error: io::Error) -> GptParseError {
+    GptParseError::Decode {
+        structure,
+        message: error.to_string(),
+    }
+}
 
 /// GPT Header (92 bytes)
 #[derive(Serialize, Default, Deserialize, Debug, Clone)]
@@ -204,32 +299,48 @@ impl GPTPartitionEntry {
         }
     }
 
-    pub fn from_bytes(bytes: &[u8]) -> Self {
-        let mut cur = Cursor::new(&bytes);
+    /// Decode the fixed GPT 1.0 partition-entry fields without panicking.
+    pub fn try_from_bytes(bytes: &[u8]) -> Result<Self, GptParseError> {
+        if bytes.len() < GPT_PARTITION_ENTRY_MIN_SIZE {
+            return Err(GptParseError::Truncated {
+                structure: "GPT partition entry",
+                needed: GPT_PARTITION_ENTRY_MIN_SIZE,
+                actual: bytes.len(),
+            });
+        }
+
+        let mut cur = Cursor::new(bytes);
         let mut entry = GPTPartitionEntry::default();
         cur.read_exact(&mut entry.partition_type_guid)
-            .expect("Could not read the partition type GUID.");
+            .map_err(|error| decode_error("GPT partition type GUID", error))?;
         cur.read_exact(&mut entry.partition_guid)
-            .expect("Could not read the partition GUID.");
+            .map_err(|error| decode_error("GPT partition GUID", error))?;
         entry.starting_lba = cur
             .read_u64::<LittleEndian>()
-            .expect("Could not read the starting LBA.");
+            .map_err(|error| decode_error("GPT partition starting LBA", error))?;
         entry.ending_lba = cur
             .read_u64::<LittleEndian>()
-            .expect("Could not read the ending LBA.");
+            .map_err(|error| decode_error("GPT partition ending LBA", error))?;
         entry.attributes = cur
             .read_u64::<LittleEndian>()
-            .expect("Could not read the partition attributes");
+            .map_err(|error| decode_error("GPT partition attributes", error))?;
 
         let mut utf16 = vec![0u16; 36];
         cur.read_u16_into::<LittleEndian>(&mut utf16)
-            .expect("Could not read the partition name");
+            .map_err(|error| decode_error("GPT partition name", error))?;
         entry.partition_name = String::from_utf16_lossy(&utf16);
         entry.description = entry.partition_type_description().to_string();
         entry.partition_type_guid_string = format_guid(&entry.partition_type_guid);
         entry.partition_guid_string = format_guid(&entry.partition_guid);
         entry.fvek = None;
-        entry
+        Ok(entry)
+    }
+
+    /// Backwards-compatible, non-panicking decoder.
+    ///
+    /// New code should use [`Self::try_from_bytes`] to retain error details.
+    pub fn from_bytes(bytes: &[u8]) -> Self {
+        Self::try_from_bytes(bytes).unwrap_or_default()
     }
 }
 
@@ -238,28 +349,72 @@ impl GPT {
         self.header.signature == *b"EFI PART"
     }
 
-    pub fn from_bytes(bytes: &[u8]) -> Self {
+    /// Decode the fixed GPT 1.0 header fields without panicking.
+    pub fn try_from_bytes(bytes: &[u8]) -> Result<Self, GptParseError> {
+        if bytes.len() < GPT_HEADER_MIN_SIZE {
+            return Err(GptParseError::Truncated {
+                structure: "GPT header",
+                needed: GPT_HEADER_MIN_SIZE,
+                actual: bytes.len(),
+            });
+        }
+
         let mut cursor = Cursor::new(bytes);
         let mut gpt = GPT::default();
 
         // Read GPT Header (92 bytes)
-        cursor.read_exact(&mut gpt.header.signature).unwrap();
-        gpt.header.revision = cursor.read_u32::<LittleEndian>().unwrap();
-        gpt.header.header_size = cursor.read_u32::<LittleEndian>().unwrap();
-        gpt.header.crc32 = cursor.read_u32::<LittleEndian>().unwrap();
-        gpt.header.reserved = cursor.read_u32::<LittleEndian>().unwrap();
-        gpt.header.current_lba = cursor.read_u64::<LittleEndian>().unwrap();
-        gpt.header.backup_lba = cursor.read_u64::<LittleEndian>().unwrap();
-        gpt.header.first_usable_lba = cursor.read_u64::<LittleEndian>().unwrap();
-        gpt.header.last_usable_lba = cursor.read_u64::<LittleEndian>().unwrap();
-        cursor.read_exact(&mut gpt.header.disk_guid).unwrap();
+        cursor
+            .read_exact(&mut gpt.header.signature)
+            .map_err(|error| decode_error("GPT signature", error))?;
+        gpt.header.revision = cursor
+            .read_u32::<LittleEndian>()
+            .map_err(|error| decode_error("GPT revision", error))?;
+        gpt.header.header_size = cursor
+            .read_u32::<LittleEndian>()
+            .map_err(|error| decode_error("GPT header size", error))?;
+        gpt.header.crc32 = cursor
+            .read_u32::<LittleEndian>()
+            .map_err(|error| decode_error("GPT header CRC", error))?;
+        gpt.header.reserved = cursor
+            .read_u32::<LittleEndian>()
+            .map_err(|error| decode_error("GPT header reserved field", error))?;
+        gpt.header.current_lba = cursor
+            .read_u64::<LittleEndian>()
+            .map_err(|error| decode_error("GPT current LBA", error))?;
+        gpt.header.backup_lba = cursor
+            .read_u64::<LittleEndian>()
+            .map_err(|error| decode_error("GPT backup LBA", error))?;
+        gpt.header.first_usable_lba = cursor
+            .read_u64::<LittleEndian>()
+            .map_err(|error| decode_error("GPT first usable LBA", error))?;
+        gpt.header.last_usable_lba = cursor
+            .read_u64::<LittleEndian>()
+            .map_err(|error| decode_error("GPT last usable LBA", error))?;
+        cursor
+            .read_exact(&mut gpt.header.disk_guid)
+            .map_err(|error| decode_error("GPT disk GUID", error))?;
         gpt.header.disk_guid_string = format_guid(&gpt.header.disk_guid);
-        gpt.header.partition_entry_lba = cursor.read_u64::<LittleEndian>().unwrap();
-        gpt.header.num_partition_entries = cursor.read_u32::<LittleEndian>().unwrap();
-        gpt.header.partition_entry_size = cursor.read_u32::<LittleEndian>().unwrap();
-        gpt.header.partition_array_crc32 = cursor.read_u32::<LittleEndian>().unwrap();
+        gpt.header.partition_entry_lba = cursor
+            .read_u64::<LittleEndian>()
+            .map_err(|error| decode_error("GPT partition-array LBA", error))?;
+        gpt.header.num_partition_entries = cursor
+            .read_u32::<LittleEndian>()
+            .map_err(|error| decode_error("GPT partition-entry count", error))?;
+        gpt.header.partition_entry_size = cursor
+            .read_u32::<LittleEndian>()
+            .map_err(|error| decode_error("GPT partition-entry size", error))?;
+        gpt.header.partition_array_crc32 = cursor
+            .read_u32::<LittleEndian>()
+            .map_err(|error| decode_error("GPT partition-array CRC", error))?;
 
-        gpt
+        Ok(gpt)
+    }
+
+    /// Backwards-compatible, non-panicking decoder.
+    ///
+    /// New code should use [`Self::try_from_bytes`] to retain error details.
+    pub fn from_bytes(bytes: &[u8]) -> Self {
+        Self::try_from_bytes(bytes).unwrap_or_default()
     }
 
     pub fn print_info(&self) -> String {
