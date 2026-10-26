@@ -1,6 +1,6 @@
 [package]
 name = "exhume_partitions"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 rust-version = "1.92"
 description = "Extract GPT and (E/M)BR partitions from a Body of data."
@@ -11,7 +11,7 @@ repository = "https://github.com/forensicxlab/exhume_partitions"
 license = "GPL-3.0-only"
 
 [dependencies]
-exhume_body = "=0.6.0"
+exhume_body = "=0.7.0"
 
 serde = { version = "1", features = ["derive"] }
 serde_with = "3.16.1"
