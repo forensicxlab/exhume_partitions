@@ -1,12 +1,14 @@
 pub mod ebr;
 pub mod extent;
 pub mod gpt;
+pub mod inspection;
 pub mod mbr;
 
 pub use extent::{
     GptPartitionSelector, PartitionExtent, PartitionExtentError, PartitionScheme, VolumeExtent,
 };
 pub use gpt::GptParseError;
+pub use inspection::{inspect_gpt, GptInspection, GptInspectionError};
 
 use exhume_body::Body;
 use gpt::{GPTHeader, GPTPartitionEntry, GPT, GPT_HEADER_MIN_SIZE, GPT_PARTITION_ENTRY_MIN_SIZE};
@@ -285,6 +287,35 @@ fn validate_gpt_header(
     sector_size: u64,
     image_size_bytes: u64,
 ) -> Result<GptTableGeometry, GptParseError> {
+    let geometry = validate_gpt_header_geometry(
+        header,
+        header_sector,
+        expected_lba,
+        sector_size,
+        image_size_bytes,
+    )?;
+
+    let mut header_for_crc = header_sector[..header.header_size as usize].to_vec();
+    header_for_crc[16..20].fill(0);
+    let actual_header_crc = crc32_ieee(&header_for_crc);
+    if actual_header_crc != header.crc32 {
+        return Err(GptParseError::HeaderCrcMismatch {
+            expected: header.crc32,
+            actual: actual_header_crc,
+        });
+    }
+    Ok(geometry)
+}
+
+// Shared safety/geometry checks; forensic inspection reports checksum results
+// independently. Strict discovery still requires every check above to pass.
+fn validate_gpt_header_geometry(
+    header: &GPTHeader,
+    header_sector: &[u8],
+    expected_lba: u64,
+    sector_size: u64,
+    image_size_bytes: u64,
+) -> Result<GptTableGeometry, GptParseError> {
     if header.signature != *b"EFI PART" {
         return Err(GptParseError::InvalidSignature);
     }
@@ -449,16 +480,6 @@ fn validate_gpt_header(
         return Err(GptParseError::InvalidHeader(
             "partition array overlaps the alternate GPT header sector".to_owned(),
         ));
-    }
-
-    let mut header_for_crc = header_sector[..header_size].to_vec();
-    header_for_crc[16..20].fill(0);
-    let actual_header_crc = crc32_ieee(&header_for_crc);
-    if actual_header_crc != header.crc32 {
-        return Err(GptParseError::HeaderCrcMismatch {
-            expected: header.crc32,
-            actual: actual_header_crc,
-        });
     }
 
     Ok(GptTableGeometry {

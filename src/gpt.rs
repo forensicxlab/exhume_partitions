@@ -145,9 +145,11 @@ pub struct GPT {
 
 impl GPTPartitionEntry {
     pub fn partition_type_description(&self) -> &str {
-        // Convert our 16-byte GUID into a canonical string
-        let guid = format_guid(&self.partition_type_guid);
-        match guid.as_str() {
+        Self::type_description_from_guid(&format_guid(&self.partition_type_guid))
+    }
+
+    pub(crate) fn type_description_from_guid(guid: &str) -> &'static str {
+        match guid {
             "00000000-0000-0000-0000-000000000000" => "Unused entry",
 
             // MBR partition scheme

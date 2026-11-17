@@ -1,8 +1,9 @@
 use clap::*;
 use exhume_body::{credentials, Body};
-use exhume_partitions::Partitions;
+use exhume_partitions::{inspect_gpt, Partitions};
 use log::{debug, error};
 use std::fs;
+use std::io::{self, Write};
 use std::process::ExitCode;
 
 fn process_file(
@@ -10,8 +11,39 @@ fn process_file(
     json: bool,
     output: Option<&String>,
     bootloader: bool,
-) -> Result<(), String> {
+    forensic: bool,
+) -> Result<u8, String> {
     debug!("Created Body from '{}'.", body.path);
+    if forensic {
+        let report =
+            inspect_gpt(&mut body).map_err(|error| format!("could not inspect GPT: {error}"))?;
+        let rendered = if json {
+            serde_json::to_string_pretty(&report)
+                .map_err(|error| format!("cannot serialize GPT inspection: {error}"))?
+        } else {
+            report.print_info()
+        };
+        if let Some(path) = output {
+            // Atomic create-new also refuses symlink/hard-link evidence aliases
+            // and existing segments of multi-file evidence containers.
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(path)
+                .map_err(|error| {
+                    format!(
+                        "cannot create forensic output '{path}' (destination must be new): {error}"
+                    )
+                })?;
+            file.write_all(rendered.as_bytes())
+                .map_err(|error| format!("cannot write forensic output: {error}"))?;
+        } else {
+            let mut stdout = io::stdout().lock();
+            writeln!(stdout, "{rendered}")
+                .map_err(|error| format!("cannot write forensic output: {error}"))?;
+        }
+        return Ok(if report.has_issues() { 3 } else { 0 });
+    }
     debug!("Discovering partitions.");
     let partitions = Partitions::new(&mut body)
         .map_err(|error| format!("could not discover partitions: {error}"))?;
@@ -27,7 +59,7 @@ fn process_file(
     } else {
         println!("{output_str}");
     }
-    Ok(())
+    Ok(0)
 }
 
 fn command() -> Command {
@@ -61,6 +93,13 @@ fn command() -> Command {
                     .value_parser(["error", "warn", "info", "debug", "trace"])
                     .default_value("info")
                     .help("Set the log verbosity level"),
+            )
+            .arg(
+                Arg::new("forensic")
+                    .long("forensic")
+                    .action(ArgAction::SetTrue)
+                    .conflicts_with("bootloader")
+                    .help("Inspect both GPT copies, retaining entries and validation findings; exit 3 for findings. Output files must be new."),
             )
             .arg(
                 Arg::new("json")
@@ -103,6 +142,7 @@ fn main() -> ExitCode {
     let json = matches.get_flag("json");
     let output = matches.get_one::<String>("output");
     let bootloader = matches.get_flag("bootloader");
+    let forensic = matches.get_flag("forensic");
     match credentials::open_body(
         file_path,
         format,
@@ -111,9 +151,9 @@ fn main() -> ExitCode {
             .map(String::as_str),
         matches.get_flag("password_stdin"),
     )
-    .and_then(|body| process_file(body, json, output, bootloader))
+    .and_then(|body| process_file(body, json, output, bootloader, forensic))
     {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(code) => ExitCode::from(code),
         Err(error) => {
             error!("{error}");
             ExitCode::FAILURE
